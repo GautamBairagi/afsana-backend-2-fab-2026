@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chatbot UI</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+
+    .chat-toggle {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      cursor: pointer;
+      z-index: 999;
+    }
+
+    .chat-panel {
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      width: 320px;
+      height: 450px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 1000;
+    }
+
+    .chat-panel.hidden {
+      display: none;
+    }
+
+    .chat-header {
+      background: #6c63ff;
+      color: white;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: white;
+      font-size: 22px;
+      cursor: pointer;
+    }
+
+    .chat-container {
+      flex: 1;
+      padding: 12px;
+      overflow-y: auto;
+      background: #f5f5f5;
+    }
+
+    .message {
+      margin-bottom: 10px;
+      padding: 10px 14px;
+      border-radius: 15px;
+      max-width: 80%;
+      clear: both;
+    }
+
+    .user-message {
+      background-color: #dcf8c6;
+      float: right;
+    }
+
+    .bot-message {
+      background-color: #e0e0e0;
+      float: left;
+    }
+
+    .chat-input {
+      display: flex;
+      padding: 10px;
+      border-top: 1px solid #ccc;
+    }
+
+    .chat-input textarea {
+      flex: 1;
+      resize: none;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 6px;
+      font-size: 14px;
+    }
+
+    .chat-input button {
+      margin-left: 8px;
+      background-color: #6c63ff;
+      color: white;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Chat Toggle Button -->
+  <div class="chat-toggle" onclick="toggleChat()">
+    <img src="https://cdn-icons-png.flaticon.com/512/4712/4712027.png" alt="Chat" width="40" />
+  </div>
+
+  <!-- Chat Panel -->
+  <div class="chat-panel hidden" id="chatPanel">
+    <div class="chat-header">
+      <h4>Chat Support</h4>
+      <button class="close-btn" onclick="toggleChat()">×</button>
+    </div>
+
+    <div class="chat-container" id="chatContainer">
+      <!-- Messages will appear here -->
+    </div>
+
+    <div class="chat-input">
+      <textarea id="userMessage" placeholder="Type your message..." rows="1" onkeydown="handleKeyPress(event)"></textarea>
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+
+  <script>
+    function toggleChat() {
+      const panel = document.getElementById('chatPanel');
+      panel.classList.toggle('hidden');
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('userMessage');
+      const container = document.getElementById('chatContainer');
+      const message = input.value.trim();
+
+      if (!message) return;
+
+      // User message
+      const userMsg = document.createElement('div');
+      userMsg.className = 'message user-message';
+      userMsg.textContent = message;
+      container.appendChild(userMsg);
+      input.value = '';
+
+      // Auto scroll
+      container.scrollTop = container.scrollHeight;
+
+      // Bot response (simulated)
+      setTimeout(() => {
+        const botMsg = document.createElement('div');
+        botMsg.className = 'message bot-message';
+        botMsg.textContent = 'Checking now!';
+        container.appendChild(botMsg);
+        container.scrollTop = container.scrollHeight;
+      }, 500);
+    }
+
+    function handleKeyPress(event) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+      }
+    }
+  </script>
+</body>
+</html>

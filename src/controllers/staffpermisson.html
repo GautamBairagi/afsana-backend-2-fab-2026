@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Create Staff with Permissions</title>
+  <style>
+    body {
+      font-family: Arial;
+      margin: 30px;
+    }
+    form {
+      max-width: 800px;
+      margin: auto;
+      border: 1px solid #ccc;
+      padding: 25px;
+      border-radius: 10px;
+    }
+    input[type="text"], input[type="email"], input[type="password"], select {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 15px;
+      border-radius: 5px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    table, th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: center;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Create New Staff with Permissions</h2>
+  <form id="createStaffForm">
+    <label>Full Name:</label>
+    <input type="text" name="full_name" required />
+
+    <label>Email:</label>
+    <input type="email" name="email" required />
+
+    <label>Phone:</label>
+    <input type="text" name="phone" required />
+
+    <label>Password:</label>
+    <input type="password" name="password" required />
+
+    <label>Role:</label>
+    <select name="role" required>
+      <option value="staff">Staff</option>
+      <option value="counselor">Counselor</option>
+      <option value="student">Student</option>
+    </select>
+
+    <label>Status:</label>
+    <select name="status">
+      <option value="active">Active</option>
+      <option value="inactive">Inactive</option>
+    </select>
+
+    <h3>Permissions</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>View</th>
+          <th>Add</th>
+          <th>Edit</th>
+          <th>Delete</th>
+        </tr>
+      </thead>
+      <tbody id="permissionTable">
+        <tr>
+          <td>Inquiry</td>
+          <td><input type="checkbox" name="Inquiry_view" checked /></td>
+          <td><input type="checkbox" name="Inquiry_add" /></td>
+          <td><input type="checkbox" name="Inquiry_edit" /></td>
+          <td><input type="checkbox" name="Inquiry_delete" /></td>
+        </tr>
+        <tr>
+          <td>Lead</td>
+          <td><input type="checkbox" name="Lead_view" /></td>
+          <td><input type="checkbox" name="Lead_add" /></td>
+          <td><input type="checkbox" name="Lead_edit" /></td>
+          <td><input type="checkbox" name="Lead_delete" /></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <button type="submit">Create Staff</button>
+  </form>
+
+  <script>
+    document.getElementById('createStaffForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      const formData = new FormData(e.target);
+      const body = {
+        full_name: formData.get('full_name'),
+        email: formData.get('email'),
+        phone: formData.get('phone'),
+        password: formData.get('password'),
+        role: formData.get('role'),
+        status: formData.get('status'),
+        user_id: 1, // Assuming admin or creator ID
+        permissions: []
+      };
+
+      const modules = ['Inquiry', 'Lead']; // Add more as needed
+      for (const mod of modules) {
+        body.permissions.push({
+          permission_name: mod,
+          view_permission: formData.get(`${mod}_view`) ? 1 : 0,
+          add_permission: formData.get(`${mod}_add`) ? 1 : 0,
+          edit_permission: formData.get(`${mod}_edit`) ? 1 : 0,
+          delete_permission: formData.get(`${mod}_delete`) ? 1 : 0
+        });
+      }
+
+      const response = await fetch('http://localhost:5000/api/staff/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const result = await response.json();
+      alert(result.message);
+    });
+  </script>
+</body>
+</html>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Update Staff Permissions</title>
+  <style>
+    body {
+      font-family: Arial;
+      padding: 30px;
+    }
+    label, select {
+      display: block;
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+      text-align: center;
+      padding: 10px;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Update Permissions for Staff</h2>
+
+  <form id="updatePermissionForm">
+    <label>Staff Role:
+      <select name="role_name" id="roleSelect">
+        <option value="staff">Staff</option>
+        <option value="counselor">Counselor</option>
+        <option value="student">Student</option>
+      </select>
+    </label>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Module</th>
+          <th>View</th>
+          <th>Add</th>
+          <th>Edit</th>
+          <th>Delete</th>
+        </tr>
+      </thead>
+      <tbody id="updatePermissionTable">
+        <tr>
+          <td>Inquiry</td>
+          <td><input type="checkbox" name="Inquiry_view" /></td>
+          <td><input type="checkbox" name="Inquiry_add" /></td>
+          <td><input type="checkbox" name="Inquiry_edit" /></td>
+          <td><input type="checkbox" name="Inquiry_delete" /></td>
+        </tr>
+        <tr>
+          <td>Lead</td>
+          <td><input type="checkbox" name="Lead_view" /></td>
+          <td><input type="checkbox" name="Lead_add" /></td>
+          <td><input type="checkbox" name="Lead_edit" /></td>
+          <td><input type="checkbox" name="Lead_delete" /></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <button type="submit">Update Permission</button>
+  </form>
+
+  <script>
+    document.getElementById('updatePermissionForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+
+      const formData = new FormData(e.target);
+      const role_name = formData.get('role_name');
+      const modules = ['Inquiry', 'Lead'];
+
+      for (let mod of modules) {
+        const permission = {
+          role_name,
+          permission_name: mod,
+          view_permission: formData.get(`${mod}_view`) ? 1 : 0,
+          add_permission: formData.get(`${mod}_add`) ? 1 : 0,
+          edit_permission: formData.get(`${mod}_edit`) ? 1 : 0,
+          delete_permission: formData.get(`${mod}_delete`) ? 1 : 0,
+          user_id: 1
+        };
+
+        await fetch('http://localhost:5000/api/permissions/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(permission)
+        });
+      }
+
+      alert("Permissions updated");
+    });
+  </script>
+</body>
+</html>
+

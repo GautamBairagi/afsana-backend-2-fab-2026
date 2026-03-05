@@ -6,9 +6,9 @@ import cloudinary from "cloudinary";
 import fs from 'fs';
 
 cloudinary.config({
-    cloud_name: 'dkqcqrrbp',
-    api_key: '418838712271323',
-    api_secret: 'p12EKWICdyHWx8LcihuWYqIruWQ'
+  cloud_name: 'dkqcqrrbp',
+  api_key: '418838712271323',
+  api_secret: 'p12EKWICdyHWx8LcihuWYqIruWQ'
 });
 
 
@@ -65,53 +65,71 @@ cloudinary.config({
 // };
 
 export const createVisaProcess = async (req, res) => {
-    const data = req.body;
+  const data = req.body;
 
-    // Remove created_at & id if present
-    if ('id' in data) delete data.id;
-    if ('created_at' in data) delete data.created_at;
+  // Remove created_at & id if present
+  if ('id' in data) delete data.id;
+  if ('created_at' in data) delete data.created_at;
 
-    // Required fields check
-    const requiredFields = [
-        'student_id','full_name', 'email', 'phone', 'date_of_birth',
-        'passport_no', 'applied_program', 'intake',
-        'assigned_counselor', 'registration_date', 'source'
+  // Required fields check
+  const requiredFields = [
+    'student_id', 'full_name', 'email', 'phone', 'date_of_birth',
+    'passport_no', 'applied_program', 'intake',
+    'assigned_counselor', 'registration_date', 'source'
+  ];
+  for (let field of requiredFields) {
+    if (!data[field]) {
+      return res.status(400).json({ message: `${field} is required.` });
+    }
+  }
+
+  try {
+    // ✅ Step 1: Student ke counselor_id aur processor_id fetch karo
+    const [studentRows] = await db.query(
+      "SELECT counselor_id, processor_id FROM students WHERE id = ?",
+      [data.student_id]
+    );
+
+    if (studentRows.length === 0) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    // ✅ Step 2: Automatically assign karo
+    data.counselor_id = studentRows[0].counselor_id;
+    data.processor_id = studentRows[0].processor_id;
+
+    // ✅ Step 3: Ensure Stage Flags are initialized if not provided
+    const stageFields = [
+      'registration_visa_processing_stage',
+      'documents_visa_processing_stage',
+      'university_application_visa_processing_stage',
+      'fee_payment_visa_processing_stage',
+      'university_interview_visa_processing_stage',
+      'offer_letter_visa_processing_stage',
+      'tuition_fee_visa_processing_stage',
+      'final_offer_visa_processing_stage',
+      'embassy_docs_visa_processing_stage',
+      'appointment_visa_processing_stage',
+      'visa_approval_visa_processing_stage',
+      'visa_rejection_visa_processing_stage'
     ];
-    for (let field of requiredFields) {
-        if (!data[field]) {
-            return res.status(400).json({ message: `${field} is required.` });
-        }
-    }
 
-    try {
-        // ✅ Step 1: Student ke counselor_id aur processor_id fetch karo
-        const [studentRows] = await db.query(
-            "SELECT counselor_id, processor_id FROM students WHERE id = ?",
-            [data.student_id]
-        );
+    stageFields.forEach(field => {
+      if (data[field] === undefined) {
+        data[field] = 0; // Default to 0 (not completed)
+      }
+    });        // ✅ Step 4: Insert visa_process record
+    const [result] = await db.query('INSERT INTO visa_process SET ?', data);
 
-        if (studentRows.length === 0) {
-            return res.status(404).json({ message: "Student not found" });
-        }
-
-        // ✅ Step 2: Automatically assign karo
-        data.counselor_id = studentRows[0].counselor_id;
-        data.processor_id = studentRows[0].processor_id;
-
-     
-
-        // ✅ Step 4: Insert visa_process record
-        const [result] = await db.query('INSERT INTO visa_process SET ?', data);
-
-        res.status(201).json({ 
-            message: 'Visa process started', 
-            id: result.insertId, 
-            ...data 
-        });
-    } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ message: 'Failed to create record', error: error.message });
-    }
+    res.status(201).json({
+      message: 'Visa process started',
+      id: result.insertId,
+      ...data
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ message: 'Failed to create record', error: error.message });
+  }
 };
 
 
@@ -145,7 +163,7 @@ export const updateVisaProcess = async (req, res) => {
   const id = req.params.id;
   const updates = { ...req.body };
   const files = req.files;
-    console.log("Received ID:", id);
+  console.log("Received ID:", id);
   console.log("Initial updates from body:", updates);
   console.log("Received files:", files);
 
@@ -171,7 +189,7 @@ export const updateVisaProcess = async (req, res) => {
       updates[key] = null;
     }
   });
-    console.log("Final updates to apply:", updates);
+  console.log("Final updates to apply:", updates);
 
   try {
     const [result] = await db.query('UPDATE visa_process SET ? WHERE id = ?', [updates, id]);
@@ -189,13 +207,13 @@ export const updateVisaProcess = async (req, res) => {
 
 // GET /api/visa-process
 export const GetVisaProcess = async (req, res) => {
-    try {
-        const [rows] = await db.query('SELECT * FROM visa_process ORDER BY created_at DESC');
-        res.status(200).json(rows);
-    } catch (error) {
-        console.error('Error fetching visa applications:', error);
-        res.status(500).json({ message: 'Error retrieving visa applications', error: error.message });
-    }
+  try {
+    const [rows] = await db.query('SELECT * FROM visa_process ORDER BY created_at DESC');
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error('Error fetching visa applications:', error);
+    res.status(500).json({ message: 'Error retrieving visa applications', error: error.message });
+  }
 };
 
 
@@ -263,9 +281,9 @@ export const GetVisaProcess = async (req, res) => {
 
 
 export const GetVisaProcessbyfilter = async (req, res) => {
-    try {
-        const filters = req.query;
-     let query = `
+  try {
+    const filters = req.query;
+    let query = `
     SELECT 
         vp.id,
         vp.student_id,
@@ -411,54 +429,54 @@ export const GetVisaProcessbyfilter = async (req, res) => {
     LEFT JOIN students s ON vp.student_id = s.id
 `;
 
-        let conditions = [];
-        let values = [];
+    let conditions = [];
+    let values = [];
 
-        const stageFields = [
-            'registration_visa_processing_stage',
-            'documents_visa_processing_stage',
-            'university_application_visa_processing_stage',
-            'fee_payment_visa_processing_stage',
-            'university_interview_visa_processing_stage',
-            'offer_letter_visa_processing_stage',
-            'tuition_fee_visa_processing_stage',
-            'final_offer_visa_processing_stage',
-            'embassy_docs_visa_processing_stage',
-            'appointment_visa_processing_stage',
-            'visa_approval_visa_processing_stage',
-            'visa_rejection_visa_processing_stage'
-        ];
+    const stageFields = [
+      'registration_visa_processing_stage',
+      'documents_visa_processing_stage',
+      'university_application_visa_processing_stage',
+      'fee_payment_visa_processing_stage',
+      'university_interview_visa_processing_stage',
+      'offer_letter_visa_processing_stage',
+      'tuition_fee_visa_processing_stage',
+      'final_offer_visa_processing_stage',
+      'embassy_docs_visa_processing_stage',
+      'appointment_visa_processing_stage',
+      'visa_approval_visa_processing_stage',
+      'visa_rejection_visa_processing_stage'
+    ];
 
-        // Build WHERE conditions
-        for (let field of stageFields) {
-            if (filters[field] !== undefined) {
-                conditions.push(`vp.${field} = ?`);
-                values.push(filters[field]);
-            }
-        }
-
-        // Optional filter by country
-        if (filters.country) {
-            conditions.push(`s.country = ?`);
-            values.push(filters.country);
-        }
-
-        if (conditions.length > 0) {
-            query += ' WHERE ' + conditions.join(' AND ');
-        }
-
-        query += ' ORDER BY vp.created_at DESC';
-
-        const [rows] = await db.query(query, values);
-
-        res.status(200).json(rows);
-    } catch (error) {
-        console.error('Error fetching visa applications:', error);
-        res.status(500).json({ 
-            message: 'Error retrieving visa applications', 
-            error: error.message 
-        });
+    // Build WHERE conditions
+    for (let field of stageFields) {
+      if (filters[field] !== undefined) {
+        conditions.push(`vp.${field} = ?`);
+        values.push(filters[field]);
+      }
     }
+
+    // Optional filter by country
+    if (filters.country) {
+      conditions.push(`s.country = ?`);
+      values.push(filters.country);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY vp.created_at DESC';
+
+    const [rows] = await db.query(query, values);
+
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error('Error fetching visa applications:', error);
+    res.status(500).json({
+      message: 'Error retrieving visa applications',
+      error: error.message
+    });
+  }
 };
 
 
@@ -471,33 +489,33 @@ export const GetVisaProcessbyfilter = async (req, res) => {
 
 // GET /api/visa-process/:id
 export const getVisaApplicationById = async (req, res) => {
-    const id = req.params.id;
-    try {
-        const [rows] = await db.query('SELECT * FROM visa_process WHERE id = ?', [id]);
-        if (rows.length === 0) {
-            return res.status(404).json({ message: 'Visa application not found' });
-        }
-        res.status(200).json(rows[0]);
-    } catch (error) {
-        console.error('Error fetching visa application by ID:', error);
-        res.status(500).json({ message: 'Error retrieving visa application', error: error.message });
+  const id = req.params.id;
+  try {
+    const [rows] = await db.query('SELECT * FROM visa_process WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Visa application not found' });
     }
+    res.status(200).json(rows[0]);
+  } catch (error) {
+    console.error('Error fetching visa application by ID:', error);
+    res.status(500).json({ message: 'Error retrieving visa application', error: error.message });
+  }
 };
 
 
 // DELETE /api/visa-process/:id
 export const deleteVisaApplication = async (req, res) => {
-    const id = req.params.id;
-    try {
-        const [result] = await db.query('DELETE FROM visa_process WHERE id = ?', [id]);
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Visa application not found or already deleted' });
-        }
-        res.status(200).json({ message: 'Visa application deleted successfully' });
-    } catch (error) {
-        console.error('Error deleting visa application:', error);
-        res.status(500).json({ message: 'Error deleting visa application', error: error.message });
+  const id = req.params.id;
+  try {
+    const [result] = await db.query('DELETE FROM visa_process WHERE id = ?', [id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Visa application not found or already deleted' });
     }
+    res.status(200).json({ message: 'Visa application deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting visa application:', error);
+    res.status(500).json({ message: 'Error deleting visa application', error: error.message });
+  }
 };
 
 // Update only one document status
@@ -513,16 +531,16 @@ export const updateDocumentStatus = async (req, res) => {
 
   // ✅ Allowed fields
   const allowedFields = [
-    "passport_doc_status","photo_doc_status","ssc_doc_status","hsc_doc_status",
-    "bachelor_doc_status","ielts_doc_status","cv_doc_status","sop_doc_status",
-    "medical_doc_status","other_doc_status","proof_submission_doc_status",
-    "proof_fees_payment_doc_status","recording_doc_status","offer_letter_upload_doc_status",
+    "passport_doc_status", "photo_doc_status", "ssc_doc_status", "hsc_doc_status",
+    "bachelor_doc_status", "ielts_doc_status", "cv_doc_status", "sop_doc_status",
+    "medical_doc_status", "other_doc_status", "proof_submission_doc_status",
+    "proof_fees_payment_doc_status", "recording_doc_status", "offer_letter_upload_doc_status",
     "proof_tuition_fees_payment_doc_status", "main_offer_upload_doc_status", "motivation_letter_doc_status",
-    "europass_cv_doc_status","bank_statement_doc_status","birth_certificate_doc_status",
-    "tax_proof_doc_status","business_documents_doc_status","ca_certificate_doc_status",
-    "health_travel_insurance_doc_status","residence_form_doc_status","flight_booking_doc_status",
-    "police_clearance_doc_status","family_certificate_doc_status","application_form_doc_status",
-    "appointment_letter_doc_status","visa_sticker_upload_doc_status"
+    "europass_cv_doc_status", "bank_statement_doc_status", "birth_certificate_doc_status",
+    "tax_proof_doc_status", "business_documents_doc_status", "ca_certificate_doc_status",
+    "health_travel_insurance_doc_status", "residence_form_doc_status", "flight_booking_doc_status",
+    "police_clearance_doc_status", "family_certificate_doc_status", "application_form_doc_status",
+    "appointment_letter_doc_status", "visa_sticker_upload_doc_status"
   ];
 
   if (!allowedFields.includes(field)) {

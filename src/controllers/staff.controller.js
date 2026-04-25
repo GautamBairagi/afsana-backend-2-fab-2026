@@ -364,7 +364,10 @@ export const getPermissionsByUser = async (req, res) => {
       email,
       phone,
       status,
-      branch
+      branch,
+      password,
+      permissions,
+      role
     } = req.body;
     try {
       const [result] = await db.query(
@@ -376,12 +379,48 @@ export const getPermissionsByUser = async (req, res) => {
       if (result.affectedRows === 0) {
         return res.status(404).json({ message: 'staff not found' });
       }
-      const [userResult] = await db.query(
-        `UPDATE users
-         SET full_name = ?, email = ?
-         WHERE staff_id = ?`,
-        [full_name, email, id]
-      );
+
+      // Find user table id for this staff
+      const [userRows] = await db.query('SELECT id FROM users WHERE staff_id = ?', [id]);
+      const userTableId = userRows[0]?.id;
+
+      if (userTableId) {
+        if (password) {
+          const hashed = await bcrypt.hash(password, 10);
+          await db.query(
+            `UPDATE users
+             SET full_name = ?, email = ?, password = ?
+             WHERE id = ?`,
+            [full_name, email, hashed, userTableId]
+          );
+        } else {
+          await db.query(
+            `UPDATE users
+             SET full_name = ?, email = ?
+             WHERE id = ?`,
+            [full_name, email, userTableId]
+          );
+        }
+
+        // Update permissions
+        if (Array.isArray(permissions)) {
+          // Delete old permissions
+          await db.query('DELETE FROM permissions WHERE user_id = ?', [userTableId]);
+          
+          // Insert new permissions
+          if (permissions.length > 0) {
+            const permissionQueries = permissions.map(p =>
+              db.query(
+                `INSERT INTO permissions 
+                  (role_name, permission_name, view_permission, add_permission, edit_permission, delete_permission, user_id) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [role || 'staff', p.permission_name, p.view_permission, p.add_permission, p.edit_permission, p.delete_permission, userTableId]
+              )
+            );
+            await Promise.all(permissionQueries);
+          }
+        }
+      }
 
       res.json({ message: 'staff updated successfully' });
     } catch (err) {
@@ -426,10 +465,21 @@ export const getAllStaff = async (_, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ message: 'No staff found' });
+      return res.status(200).json([]);
     }
 
-    res.status(200).json(rows);
+    // Fetch permissions for each staff member
+    const staffWithPermissions = await Promise.all(
+      rows.map(async (staff) => {
+        const [permissions] = await db.query(
+          `SELECT * FROM permissions WHERE user_id = (SELECT id FROM users WHERE staff_id = ?)`,
+          [staff.id]
+        );
+        return { ...staff, permissions };
+      })
+    );
+
+    res.status(200).json(staffWithPermissions);
   } catch (err) {
     console.error('Get All Staff error:', err);
     res.status(500).json({ message: 'Internal server error' });

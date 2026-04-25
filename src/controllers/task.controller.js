@@ -20,10 +20,30 @@ export const createTask = async (req, res) => {
     const {
       title, user_id, due_date, counselor_id, student_id,
       description, priority, status, related_to, related_item,
-      assigned_to, assigned_date, finishing_date, attachment
+      assigned_to, assigned_date, finishing_date
     } = req.body;
+
     if (!title || !user_id || !due_date || !counselor_id || !student_id || !description || !priority || !status || !related_to || !related_item || !assigned_to || !assigned_date || !finishing_date) {
       return res.status(400).json({ message: 'all fields are required' });
+    }
+
+    let attachmentUrl = '';
+
+    // ✅ Handle file upload to Cloudinary
+    if (req.files && req.files.attachment) {
+      const file = req.files.attachment;
+      try {
+        const uploadResult = await cloudinary.uploader.upload(file.tempFilePath, {
+          folder: 'task_attachments',
+        });
+        attachmentUrl = uploadResult.secure_url;
+        if (fs.existsSync(file.tempFilePath)) {
+          fs.unlinkSync(file.tempFilePath); // cleanup temp file
+        }
+      } catch (err) {
+        console.error("Cloudinary Task Attachment Upload Error:", err);
+        return res.status(500).json({ message: 'Attachment upload failed' });
+      }
     }
 
     const [result] = await db.query(
@@ -34,42 +54,34 @@ export const createTask = async (req, res) => {
       [
         title, due_date, counselor_id, student_id,
         description, priority, status, related_to, related_item,
-        assigned_to, assigned_date, finishing_date, attachment
+        assigned_to, assigned_date, finishing_date, attachmentUrl
       ]
     );
 
+    if (result) {
+      const [findCounselorName] = await db.query(
+        "SELECT full_name FROM users WHERE counselor_id = ?",
+        [counselor_id]
+      );
+      const Cname = findCounselorName[0]?.full_name;
 
-  if (result) {
-  const [findCounselorName] = await db.query(
-    "SELECT full_name FROM users WHERE counselor_id = ?",
-    [counselor_id]
-  );
-  const Cname = findCounselorName[0]?.full_name;
+      const [findStudentName] = await db.query(
+        "SELECT full_name FROM users WHERE student_id = ?",
+        [student_id]
+      );
+      const Sname = findStudentName[0]?.full_name;
 
-  const [findStudentName] = await db.query(
-    "SELECT full_name FROM users WHERE student_id = ?",
-    [student_id]
-  );
-  const Sname = findStudentName[0]?.full_name;
+      await db.query(
+        `INSERT INTO dashboard_notifications 
+         (counselor_id, student_id, sNotification, cNotification, message)
+         VALUES (?, ?, ?, ?, ?)`,
+        [counselor_id, student_id, 1, 1, `A new task has been assigned to counselor ${Cname} and student ${Sname}`]
+      );
 
-  await db.query(
-    `INSERT INTO dashboard_notifications 
-     (counselor_id, student_id, sNotification, cNotification, message)
-     VALUES (?, ?, ?, ?, ?)`,
-    [counselor_id, student_id, 1, 1, `A new task has been assigned to counselor ${Cname} and student ${Sname}`]
-  );
-
-  // 🔔 Emit real-time update to this student and counselor
-  io.to(String(student_id)).emit("dashboardUpdated", { student_id, message: `New Task Assigned: ${title}` });
-  io.to(String(counselor_id)).emit("dashboardUpdated", { counselor_id, message: `New Task Assigned: ${title}` });
-}
-
-    // await db.query(`
-    //    INSERT INTO notifications (senderss_id, receiverss_id, type, related_id, message)
-    //    VALUES (?, ?, ?, ?, ?)`,
-    //    [user_id, assigned_to, 'task_assigned', result.insertId, `You have been assigned a task: ${title}`]
-    //  );
-
+      // 🔔 Emit real-time update
+      io.to(String(student_id)).emit("dashboardUpdated", { student_id, message: `New Task Assigned: ${title}` });
+      io.to(String(counselor_id)).emit("dashboardUpdated", { counselor_id, message: `New Task Assigned: ${title}` });
+    }
 
     res.status(201).json({ message: 'Task created successfully', taskId: result.insertId });
   } catch (err) {
@@ -296,6 +308,25 @@ export const updateTask = async (req, res) => {
   } = req.body;
 
   try {
+    let attachmentUrl = attachment; // Default to existing attachment string if provided
+
+    // ✅ If a new file is uploaded, use Cloudinary
+    if (req.files && req.files.attachment) {
+      const file = req.files.attachment;
+      try {
+        const uploadResult = await cloudinary.uploader.upload(file.tempFilePath, {
+          folder: 'task_attachments',
+        });
+        attachmentUrl = uploadResult.secure_url;
+        if (fs.existsSync(file.tempFilePath)) {
+          fs.unlinkSync(file.tempFilePath);
+        }
+      } catch (err) {
+        console.error("Cloudinary Task Update Attachment Error:", err);
+        return res.status(500).json({ message: 'Attachment upload failed' });
+      }
+    }
+
     const [result] = await db.execute(
       `UPDATE tasks SET title=?, user_id=?, due_date=?, counselor_id=?, student_id=?,
        description=?, priority=?, status=?, related_to=?, related_item=?,
@@ -304,7 +335,7 @@ export const updateTask = async (req, res) => {
       [
         title, user_id, due_date, counselor_id, student_id,
         description, priority, status, related_to, related_item,
-        assigned_to, assigned_date, finishing_date, attachment, id
+        assigned_to, assigned_date, finishing_date, attachmentUrl, id
       ]
     );
 

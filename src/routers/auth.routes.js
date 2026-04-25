@@ -1,7 +1,15 @@
 import express from 'express';
 import { upload } from '../middlewares/upload.js';
-import {getVisaProcessByuniversityidsss, createStudent, register, login, StudentAssignToCounselor, getAllStudents, getStudentById, deleteStudent, changeNewPassword, updateUser, getuserById, getAllByRoles, getStudentsByCounselorId, signupWithGoogle , sendOtpToEmail, verifyOtp, createStudentWithGoogle
-, updateStudent, validateToken, getVisaProcessBystudentidsss, getAssignedStudents, editStudent, forgotPassword, resetPassword, getStudentByProcessorId, getStudentByCouseloerId, getAssignedStudentsincounserdashboard, getAssignedStudentsinProcessordashboard} from '../controllers/auth.controller.js';
+import { 
+  getVisaProcessByuniversityidsss, createStudent, register, login, StudentAssignToCounselor, 
+  getAllStudents, getStudentById, deleteStudent, changeNewPassword, updateUser, 
+  getuserById, getAllByRoles, getStudentsByCounselorId, signupWithGoogle, 
+  sendOtpToEmail, verifyOtp, createStudentWithGoogle, updateStudent, validateToken, 
+  getVisaProcessBystudentidsss, getAssignedStudents, getAssignedCounselor, 
+  editStudent, forgotPassword, resetPassword, getStudentByProcessorId, 
+  getStudentByCouseloerId, getAssignedStudentsincounserdashboard, 
+  getAssignedStudentsinProcessordashboard, getAssignedStaffForStudent 
+} from '../controllers/auth.controller.js';
 // import { authenticate } from '../middlewares/auth.middleware.js';
 const router = express.Router();
 router.post('/register', register);
@@ -38,6 +46,7 @@ router.delete('/deleteStudent/:id', deleteStudent);
 router.get("/getusersByRole/:role",getAllByRoles)
 router.post('/student/google-signup', createStudentWithGoogle);
 router.get('/getAssignedStudents/:counselor_id', getAssignedStudents);
+router.get('/getAssignedCounselor/:student_id', getAssignedCounselor);
 router.post('/register', register);
 router.post('/login', login);
 router.post('/validate-token', validateToken); // 👈 Add this route
@@ -49,6 +58,7 @@ router.post('/resetPassword', resetPassword);
 router.get('/getVisaProcessByuniversityidsss/:university_id/:student_id', getVisaProcessByuniversityidsss);
 
 router.get("/getVisaProcessBystudentidsss/:student_id", getVisaProcessBystudentidsss);
+router.get('/getAssignedStaffForStudent/:student_id', getAssignedStaffForStudent);
 
 
 export default router;

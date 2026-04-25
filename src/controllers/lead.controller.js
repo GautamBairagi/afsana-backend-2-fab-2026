@@ -186,18 +186,43 @@ export const getLeadByCounselorId = async (req, res) => {
 
 export const getLeadByCounselorIdnew = async (req, res) => {
   const { id } = req.params;
+  const { branch, created_at } = req.query;
+
   try {
-    const query = 'SELECT * FROM inquiries WHERE counselor_id = ?';
-    const [result] = await db.query(query, [id]);
+    let query = 'SELECT * FROM inquiries WHERE (counselor_id = ? OR created_by = (SELECT id FROM users WHERE counselor_id = ? LIMIT 1))';
+    const params = [id, id];
+
+    // Search for leads (Converted or matching new_leads list)
+    const allowedNewLeads = [
+      "New Lead", "Contacted", "Follow-Up Needed", "Visited Office",
+      "Not Interested", "Next Intake Interested", "Registered", "Dropped", "new"
+    ];
+    
+    query += ` AND (lead_status = 'Converted to Lead' OR new_leads IN (${allowedNewLeads.map(() => '?').join(', ')}))`;
+    params.push(...allowedNewLeads);
+
+    if (branch && branch !== 'Both') {
+      query += ` AND branch = ?`;
+      params.push(branch);
+    } else if (branch === 'Both') {
+      query += ` AND branch IN ('Sylhet', 'Dhaka')`;
+    }
+
+    if (created_at) {
+      query += ` AND DATE(created_at) >= ?`;
+      params.push(created_at);
+    }
+
+    const [result] = await db.query(query, params);
 
     if (result.length === 0) {
-      return res.status(404).json({ message: "Inquiries not found" });
+      return res.status(200).json([]);
     }
 
     const data = await Promise.all(
       result.map(async (inquiry) => {
         const counselorID = inquiry.counselor_id;
-        const counselorInfo = await getCounselorById(counselorID); // Should return [{ full_name: '...' }]
+        const counselorInfo = await getCounselorById(counselorID);
 
 
         return {
@@ -215,10 +240,10 @@ export const getLeadByCounselorIdnew = async (req, res) => {
           payment_status: inquiry.payment_status,
           preferred_countries: inquiry.preferred_countries || '',
           notes: inquiry.assignment_description || '',
-gender:inquiry.gender,
-          date_of_birth:inquiry.date_of_birth,
-          address:inquiry.address,
-          present_address:inquiry.present_address,
+          gender: inquiry.gender,
+          date_of_birth: inquiry.date_of_birth,
+          address: inquiry.address,
+          present_address: inquiry.present_address,
           user_id: inquiry.user_id || null,
           created_at: inquiry.created_at,
           updated_at: inquiry.updated_at,
@@ -288,10 +313,10 @@ export const updateLeadStatus = async (req, res) => {
       [id]
     );
 
-    // Step 3: If it's converted, update `new_leads` column to "new"
+    // Step 3: If it's converted, update `new_leads` column to "New Lead"
     if (newData.length > 0) {
       await db.query(
-        "UPDATE inquiries SET new_leads = 'new' WHERE id = ?",
+        "UPDATE inquiries SET new_leads = 'New Lead' WHERE id = ?",
         [id]
       );
     }

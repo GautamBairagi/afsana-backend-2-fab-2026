@@ -1,6 +1,30 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import db from '../config/db.js';
+
+export const getAssignedStaffForStudent = async (req, res) => {
+  const { student_id } = req.params;
+  try {
+    const [studentRows] = await db.query(
+      "SELECT counselor_id, processor_id FROM students WHERE id = ?",
+      [student_id]
+    );
+    if (studentRows.length === 0) return res.status(404).json({ message: "Student not found" });
+    const { counselor_id, processor_id } = studentRows[0];
+    const staffIds = [];
+    if (counselor_id) staffIds.push(counselor_id);
+    if (processor_id) staffIds.push(processor_id);
+    if (staffIds.length === 0) return res.status(200).json([]);
+    const [staffRows] = await db.query(
+      "SELECT id, full_name, role, photo FROM users WHERE id IN (?)",
+      [staffIds]
+    );
+    res.status(200).json(staffRows);
+  } catch (error) {
+    console.error('Error fetching assigned staff:', error);
+    res.status(500).json({ message: 'Internal server error', error });
+  }
+};
 import dotenv from 'dotenv';
 import { getCounselorById } from '../models/counselor.model.js';
 import { universityNameById } from '../models/universities.model.js';
@@ -330,85 +354,86 @@ export const getuserById = async (req, res) => {
 
 export const createStudent = async (req, res) => {
   console.log("req.body:", req.body);
-  console.log("req.files:", req.files);
+  const {
+    father_name, unique_id, country, mobile_number, university_id,
+    date_of_birth, gender, category, address, full_name,
+    password, email, identifying_name, mother_name,
+    counselor_id, processor_id, inquiry_id
+  } = req.body;
+
+  if (!full_name || !email || !password) {
+    return res.status(400).json({ message: 'full_name, email, and password are required' });
+  }
+
+  const parseId = (val) => (val === "null" || val === "undefined" || !val || isNaN(val)) ? null : Number(val);
+  const parsedUniversityId = parseId(university_id);
+  const parsedCounselorId = parseId(counselor_id);
+  const parsedProcessorId = parseId(processor_id);
+  const role = 'student';
+
+  const photo = req.files?.photo?.[0] ? `/uploads/${req.files.photo[0].filename}` : '';
+  const documents = req.files?.documents?.[0] ? `/uploads/${req.files.documents[0].filename}` : '';
+
+  const connection = await db.getConnection();
   try {
-    const {
-      father_name,
-unique_id,
-country,
-      mobile_number,
-      university_id,
-      date_of_birth,
-      gender,
-      category,
-      address,
-      full_name,
-      password,
-      email,
-      identifying_name,
-      mother_name
-    } = req.body;
-    // ✅ Check for required fields
-    if (!full_name || !email || !password) {
-      return res.status(400).json({ message: 'full_name, email, and password are required' });
-    }
-    const role = 'student';
-    // ✅ Handle optional file uploads
-    const photo = req.files?.photo?.[0]
-      ? `/uploads/${req.files.photo[0].filename}`
-      : '';
-    const documents = req.files?.documents?.[0]
-      ? `/uploads/${req.files.documents[0].filename}`
-      : '';
-    // ✅ Email uniqueness check
-    const [existing] = await db.query('SELECT id FROM users WHERE email = ?', [email]);
+    await connection.beginTransaction();
+
+    // Check if user already exists
+    const [existing] = await connection.query('SELECT id, student_id FROM users WHERE email = ?', [email]);
+    let userId;
+
     if (existing.length > 0) {
-      return res.status(409).json({ message: 'User already exists' });
+      if (existing[0].student_id) {
+        await connection.rollback();
+        return res.status(409).json({ message: 'User already registered as a student' });
+      }
+      userId = existing[0].id;
+      // Update existing user if needed (e.g., update password/name)
+      const hashed = await bcrypt.hash(password, 10);
+      await connection.query('UPDATE users SET password = ?, full_name = ?, role = ? WHERE id = ?', [hashed, full_name, role, userId]);
+    } else {
+      const hashed = await bcrypt.hash(password, 10);
+      const [userResult] = await connection.query(
+        'INSERT INTO users (email, password, full_name, user_id, role) VALUES (?, ?, ?, ?, ?)',
+        [email, hashed, full_name, 0, role]
+      );
+      userId = userResult.insertId;
     }
-    // ✅ Password hashing
-    const hashed = await bcrypt.hash(password, 10);
-    // ✅ Handle optional fields with null values for optional fields
-    const parsedUniversityId =
-      university_id && !isNaN(university_id) ? Number(university_id) : null;
-    // ✅ Insert into users table first (since user_id is created there)
-    const [userResult] = await db.query(
-      'INSERT INTO users (email, password, full_name, user_id, role) VALUES (?, ?, ?, ?, ?)',
-      [email, hashed, full_name, 0, role]
-    );
-    const userId = userResult.insertId;
-    // ✅ Insert into students table with the `user_id` created in the `users` table
-    const [studentResult] = await db.query(
+
+    // Insert into students table
+    const [studentResult] = await connection.query(
       `INSERT INTO students 
-        (user_id, father_name, unique_id, country ,  identifying_name, mother_name,  mobile_number, university_id, date_of_birth, gender, category, address, full_name, role, photo, documents) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, father_name, unique_id, country, identifying_name, mother_name, mobile_number, university_id, date_of_birth, gender, category, address, full_name, role, photo, documents, counselor_id, processor_id) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        userId,
-        father_name || '',
-unique_id || '',
-country || '',
-        identifying_name || '',
-        mother_name || '',
-        mobile_number || '',
-        parsedUniversityId,
-        date_of_birth || null,
-        gender || '',
-        category || '',
-        address || '',
-        full_name,
-        role,
-        photo,
-        documents,
+        userId, father_name || '', unique_id || '', country || '', identifying_name || '',
+        mother_name || '', mobile_number || '', parsedUniversityId, date_of_birth || null,
+        gender || '', category || '', address || '', full_name, role, photo, documents,
+        parsedCounselorId, parsedProcessorId
       ]
     );
     const studentId = studentResult.insertId;
-    // ✅ After inserting the student, update `users` table with the `student_id`
-    await db.query('UPDATE users SET student_id = ? WHERE id = ?', [studentId, userId]);
 
-    res.status(201).json({ message: 'Student created successfully' });
+    // Update users table with student_id
+    await connection.query('UPDATE users SET student_id = ? WHERE id = ?', [studentId, userId]);
+
+    // Update inquiry status
+    if (inquiry_id && inquiry_id !== "null") {
+      await connection.query("UPDATE inquiries SET new_leads = 'Converted to Student' WHERE id = ?", [inquiry_id]);
+    }
+
+    await connection.commit();
+    res.status(201).json({ message: 'Student created successfully', student_id: studentId });
 
   } catch (error) {
+    await connection.rollback();
     console.error('Error creating student:', error);
-    res.status(500).json({ message: 'Internal server error', error });
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'Duplicate entry detected: ' + error.sqlMessage });
+    }
+    res.status(500).json({ message: 'Internal server error', error: error.message });
+  } finally {
+    connection.release();
   }
 };
 
@@ -826,6 +851,28 @@ export const getAssignedStudents = async (req, res) => {
   }
 };
 
+export const getAssignedCounselor = async (req, res) => {
+  const { student_id } = req.params;
+
+  try {
+    const [counselors] = await db.query(
+      `SELECT 
+         u.full_name,
+         u.role,
+         u.id
+       FROM students s
+       JOIN users u ON s.counselor_id = u.counselor_id
+       WHERE s.id = ?`,
+      [student_id]
+    );
+
+    res.status(200).json(counselors);
+  } catch (error) {
+    console.error("Error fetching assigned counselor:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 
 export const getAllStudents = async (req, res) => {
   try {
@@ -1030,14 +1077,14 @@ export const getStudentByProcessorId = async (req, res) => {
       `, [processor_id]);
 
     if (student.length === 0) {
-      return res.status(404).json({ message: 'Student not found' });
+      return res.status(200).json([]);
     }
     const parsedRows = student.map((row) => ({
       ...row,
       photo: row.photo ? `${req.protocol}://${req.get("host")}${row.photo}` : null,
       documents: row.documents ? `${req.protocol}://${req.get("host")}${row.documents}` : null,
     }));
-    res.status(200).json(parsedRows[0]);
+    res.status(200).json(parsedRows);
   } catch (error) {
     console.error('Error fetching student:', error);
     res.status(500).json({ message: 'Internal server error', error });
@@ -1058,14 +1105,14 @@ export const getStudentByCouseloerId = async (req, res) => {
       `, [counselor_id]);
 
     if (student.length === 0) {
-      return res.status(404).json({ message: 'Student not found' });
+      return res.status(200).json([]);
     }
     const parsedRows = student.map((row) => ({
       ...row,
       photo: row.photo ? `${req.protocol}://${req.get("host")}${row.photo}` : null,
       documents: row.documents ? `${req.protocol}://${req.get("host")}${row.documents}` : null,
     }));
-    res.status(200).json(parsedRows[0]);
+    res.status(200).json(parsedRows);
   } catch (error) {
     console.error('Error fetching student:', error);
     res.status(500).json({ message: 'Internal server error', error });
@@ -1545,28 +1592,40 @@ export const getVisaProcessByuniversityidsss = async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      // 'SELECT * FROM visa_process WHERE university_id = ? AND student_id = ?',
-         `
-      SELECT 
-        vp.*,
-        u.name AS university_names
+      `SELECT vp.*, u.name as university_name
       FROM visa_process vp
       LEFT JOIN universities u 
         ON vp.university_id = u.id
       WHERE vp.university_id = ? 
         AND vp.student_id = ?
-      `,
+      ORDER BY (
+        registration_visa_processing_stage + 
+        documents_visa_processing_stage + 
+        university_application_visa_processing_stage + 
+        fee_payment_visa_processing_stage + 
+        university_interview_visa_processing_stage + 
+        offer_letter_visa_processing_stage + 
+        tuition_fee_visa_processing_stage + 
+        final_offer_visa_processing_stage + 
+        embassy_docs_visa_processing_stage + 
+        appointment_visa_processing_stage + 
+        visa_approval_visa_processing_stage + 
+        visa_rejection_visa_processing_stage +
+        (CASE WHEN passport_doc IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN photo_doc IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN university_name IS NOT NULL THEN 1 ELSE 0 END)
+      ) DESC, vp.id DESC`,
       [university_id, student_id]
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ message: "Visa application not found" });
+      return res.status(404).json({ message: 'No visa process data found for this student and university' });
     }
 
-    return res.status(200).json(rows); 
+    res.status(200).json(rows);
   } catch (error) {
-    console.error(`internal server error : ${error}`);
-    res.status(500).json({ message: 'internal server error' });
+    console.error('Error fetching visa process data:', error);
+    res.status(500).json({ message: 'Internal server error', error });
   }
 };
 
@@ -1608,5 +1667,6 @@ export const getVisaProcessBystudentidsss = async (req, res) => {
     });
   }
 };
+
 
 

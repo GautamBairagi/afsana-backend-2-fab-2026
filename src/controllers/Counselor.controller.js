@@ -123,33 +123,45 @@ export const getCounselorById = async (req, res) => {
 
 export const updateCounselor = async (req, res) => {
   const { id } = req.params;
-  const {
-    user_id,
-    full_name,
-    email,
-    phone,
-    university_id,
-    status
-  } = req.body;
-  try {
-    const [result] = await db.query(
-      `UPDATE counselors
-         SET user_id = ?,  phone = ?, university_id = ?, status = ?
-         WHERE id = ?`,
-      [user_id, phone, university_id, status, id]
-    );
+    const {
+      user_id,
+      full_name,
+      email,
+      phone,
+      university_id,
+      status,
+      password
+    } = req.body;
+    try {
+      const [result] = await db.query(
+        `UPDATE counselors
+           SET user_id = ?,  phone = ?, university_id = ?, status = ?
+           WHERE id = ?`,
+        [user_id, phone, university_id, status, id]
+      );
+  
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: 'Counselor not found' });
+      }
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Counselor not found' });
-    }
-    const [userResult] = await db.query(
-      `UPDATE users
-         SET full_name = ?, email = ?
-         WHERE counselor_id = ?`,
-      [full_name, email, id]
-    );
-
-    res.json({ message: 'Counselor updated successfully' });
+      if (password) {
+        const hashed = await bcrypt.hash(password, 10);
+        await db.query(
+          `UPDATE users
+             SET full_name = ?, email = ?, password = ?
+             WHERE counselor_id = ?`,
+          [full_name, email, hashed, id]
+        );
+      } else {
+        await db.query(
+          `UPDATE users
+             SET full_name = ?, email = ?
+             WHERE counselor_id = ?`,
+          [full_name, email, id]
+        );
+      }
+  
+      res.json({ message: 'Counselor updated successfully' });
   } catch (err) {
     console.error('Update Counselor error:', err);
     res.status(500).json({ message: 'Internal server error' });
@@ -188,7 +200,7 @@ export const getAllCounselor = async (_, res) => {
 
     // If no counselors found
     if (rows.length === 0) {
-      return res.status(404).json({ message: 'No counselors found' });
+      return res.status(200).json([]);
     }
 
     // Get university names in parallel

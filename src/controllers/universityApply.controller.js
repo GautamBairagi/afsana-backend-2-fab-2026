@@ -121,6 +121,69 @@ export const createApply = async (req, res) => {
         const query = `INSERT INTO studentapplicationprocess SET ?`;
         const [result] = await db.query(query, data);
 
+        // ✅ Automatically sync with visa_process table
+        try {
+            const student_id = data.student_id;
+            const university_id = data.university_id;
+
+            console.log("Syncing with visa_process: student_id =", student_id, "university_id =", university_id);
+
+            // Fetch student info and email from users table
+            const [studentData] = await db.query(`
+                SELECT s.*, u.email 
+                FROM students s 
+                LEFT JOIN users u ON s.user_id = u.id 
+                WHERE s.id = ?
+            `, [student_id]);
+
+            if (studentData.length > 0) {
+                const student = studentData[0];
+                
+                // Fetch university name
+                const [uniData] = await db.query("SELECT name FROM universities WHERE id = ?", [university_id]);
+                const universityName = uniData[0]?.name || 'Unknown University';
+
+                // Fetch Counselor Name for the assigned_counselor field
+                let counselorName = '';
+                if (student.counselor_id) {
+                    const [counselor] = await db.query("SELECT full_name FROM users WHERE counselor_id = ?", [student.counselor_id]);
+                    counselorName = counselor[0]?.full_name || '';
+                }
+
+                const visaData = {
+                    student_id: student_id,
+                    university_id: university_id,
+                    full_name: student.full_name,
+                    email: student.email || '',
+                    phone: student.mobile_number || '',
+                    date_of_birth: student.date_of_birth,
+                    passport_no: student.passport_1_no || '',
+                    applied_program: universityName, 
+                    intake: 'Jan-2025', // Default intake or can be dynamic
+                    assigned_counselor: counselorName,
+                    counselor_id: student.counselor_id,
+                    processor_id: student.processor_id,
+                    registration_date: new Date().toISOString().split('T')[0],
+                    source: 'University Application',
+                    registration_visa_processing_stage: 1 // Mark the first stage as active
+                };
+
+                // Check if a visa process already exists for this student and university to avoid duplicates
+                const [existing] = await db.query(
+                    "SELECT id FROM visa_process WHERE student_id = ? AND university_id = ?", 
+                    [student_id, university_id]
+                );
+                
+                if (existing.length === 0) {
+                    await db.query("INSERT INTO visa_process SET ?", [visaData]);
+                    console.log(`Visa process initialized for student ${student_id} and university ${university_id}`);
+                }
+            }
+        } catch (syncError) {
+            console.error('Failed to auto-sync with visa_process:', syncError);
+            // Non-blocking error for the main application process
+        }
+
         res.status(201).json({ message: 'Record created successfully', id: result.insertId });
     } catch (error) {
         console.error('Error creating record:', error);

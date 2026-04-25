@@ -21,35 +21,35 @@ export const uploadDocuments = async (req, res) => {
       return res.status(404).json({ message: 'Inquiry not found' });
     }
 
+    if (!files || Object.keys(files).length === 0) {
+      return res.status(400).json({ message: 'No files provided for update' });
+    }
+
     const uploads = {};
+    const allowedFields = ['passport', 'certificates', 'ielts', 'sop'];
 
-    const uploadToCloudinary = async (fileBuffer, folderName) => {
-      return new Promise((resolve, reject) => {
-        cloudinary.uploader.upload_stream(
-          { folder: `inquiries/${folderName}`, resource_type: 'auto' },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result.secure_url);
+    for (const field of allowedFields) {
+      const file = files[field];
+      if (file && file.tempFilePath) {
+        try {
+          const result = await cloudinary.uploader.upload(file.tempFilePath, {
+            folder: `inquiries/${field}`,
+            resource_type: 'auto'
+          });
+          uploads[field] = result.secure_url;
+          // Delete temp file after upload
+          if (fs.existsSync(file.tempFilePath)) {
+            fs.unlinkSync(file.tempFilePath);
           }
-        ).end(fileBuffer);
-      });
-    };
-
-    if (files?.passport) {
-      uploads.passport = await uploadToCloudinary(files.passport[0].buffer, 'passport');
-    }
-    if (files?.certificates) {
-      uploads.certificates = await uploadToCloudinary(files.certificates[0].buffer, 'certificates');
-    }
-    if (files?.ielts) {
-      uploads.ielts = await uploadToCloudinary(files.ielts[0].buffer, 'ielts');
-    }
-    if (files?.sop) {
-      uploads.sop = await uploadToCloudinary(files.sop[0].buffer, 'sop');
+        } catch (err) {
+          console.error(`Cloudinary upload error for ${field}:`, err);
+          return res.status(500).json({ message: `Upload failed for ${field}` });
+        }
+      }
     }
 
     if (Object.keys(uploads).length === 0) {
-      return res.status(400).json({ message: 'No files provided for update' });
+      return res.status(400).json({ message: 'No valid files processed' });
     }
 
     const updateFields = Object.keys(uploads).map(field => `${field} = ?`).join(', ');
@@ -60,10 +60,13 @@ export const uploadDocuments = async (req, res) => {
       [...values, id]
     );
 
-    res.status(200).json({ message: 'Documents uploaded and inquiry updated successfully' });
+    res.status(200).json({ 
+      message: 'Documents uploaded and inquiry updated successfully',
+      urls: uploads
+    });
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ message: 'Server error', error });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -73,7 +76,7 @@ export const createInquiry = async (req, res) => {
     course_name, country, city, date_of_birth, gender, medium, study_level, study_field,
     intake, budget, consent, highest_level, ssc, hsc, bachelor, university, test_type, test_name, overall_score, reading_score, writing_score, speaking_score, listening_score, date_of_inquiry, address, present_address, additionalNotes,
     study_gap, visa_refused, refusal_reason, education_background, english_proficiency, company_name, job_title,
-    job_duration, preferred_countries, priority
+    job_duration, preferred_countries, priority, created_by
   } = req.body;
   console.log("req.body ", req.body);
   try {
@@ -97,14 +100,14 @@ export const createInquiry = async (req, res) => {
          course_name, country, city, date_of_birth, gender, medium, study_level, study_field,
     intake, budget, consent,  highest_level, ssc, hsc ,bachelor ,university , test_type, test_name, overall_score, reading_score, writing_score, speaking_score, listening_score,   date_of_inquiry, address, present_address, additionalNotes ,
         study_gap, visa_refused, refusal_reason, education_background, english_proficiency, company_name, job_title, 
-         job_duration, preferred_countries, lead_status,payment_status, assignment_description, priority)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?);`,
+         job_duration, preferred_countries, lead_status, new_leads, payment_status, assignment_description, priority, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Converted to Lead', 'New Lead', 0, 0, ?, ?);`,
       [
         formattedCounselorId, inquiry_type, source, branch, full_name, phone_number, email,
         course_name, country, city, date_of_birth, gender, medium, study_level, study_field,
         intake, budget, consent, highest_level, ssc, hsc, bachelor, university, test_type, test_name, overall_score, reading_score, writing_score, speaking_score, listening_score, date_of_inquiry, address, present_address, additionalNotes, study_gap, visa_refused, refusal_reason,
         JSON.stringify(education_background), JSON.stringify(english_proficiency),
-        company_name, job_title, job_duration, JSON.stringify(preferred_countries), priority
+        company_name, job_title, job_duration, JSON.stringify(preferred_countries), priority, created_by
       ]
     );
 
@@ -167,7 +170,7 @@ export const updateInquiry = async (req, res) => {
     test_name, overall_score, reading_score, writing_score, speaking_score, listening_score,
     date_of_inquiry, address, present_address, additionalNotes,
     study_gap, visa_refused, refusal_reason, education_background, english_proficiency,
-    company_name, job_title, job_duration, preferred_countries, priority
+    company_name, job_title, job_duration, preferred_countries, priority, created_by
   } = req.body;
 
   try {
@@ -211,7 +214,7 @@ export const updateInquiry = async (req, res) => {
           test_type = ?, test_name = ?, overall_score = ?, reading_score = ?, writing_score = ?, speaking_score = ?, listening_score = ?, 
           date_of_inquiry = ?, address = ?, present_address = ?, additionalNotes = ?, study_gap = ?, visa_refused = ?, 
           refusal_reason = ?, education_background = ?, english_proficiency = ?, company_name = ?, job_title = ?, 
-          job_duration = ?, preferred_countries = ?, priority = ?
+          job_duration = ?, preferred_countries = ?, priority = ?, created_by = ?
         WHERE id = ?`,
       [
         formattedCounselorId, inquiry_type, source, branch, full_name, phone_number, email,
@@ -222,7 +225,7 @@ export const updateInquiry = async (req, res) => {
         refusal_reason, JSON.stringify(education_background),
         JSON.stringify(english_proficiency),
         company_name, job_title, job_duration,
-        JSON.stringify(preferred_countries), priority,
+        JSON.stringify(preferred_countries), priority, created_by,
         id
       ]
     );
@@ -445,7 +448,7 @@ export const getAllInquiries = async (req, res) => {
       query += ` WHERE ` + conditions.join(' AND ');
     }
 
-    query += ` ORDER BY i.created_at ASC`; // Oldest first
+    query += ` ORDER BY i.created_at DESC`; // Newest first
 
     const [results] = await db.query(query, params);
 
@@ -479,7 +482,7 @@ export const getAllInquiries = async (req, res) => {
 
 
 export const assignInquiry = async (req, res) => {
-  const { inquiry_id, counselor_id, follow_up_date, notes } = req.body;
+  const { inquiry_id, counselor_id, follow_up_date, notes, assigned_by } = req.body;
 
   // Validation
   if (!inquiry_id || !counselor_id) {
@@ -491,9 +494,10 @@ export const assignInquiry = async (req, res) => {
        SET counselor_id = ?, 
            status = 1, 
            follow_up_date = ?, 
-           notes = ? 
+           notes = ?,
+           assigned_by = ?
        WHERE id = ?`,
-      [counselor_id, follow_up_date || null, notes || null, inquiry_id]
+      [counselor_id, follow_up_date || null, notes || null, assigned_by, inquiry_id]
     );
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'Inquiry not found' });
@@ -692,37 +696,68 @@ export const updateInquiryPriority = async (req, res) => {
 
 export const getAllConvertedLeads = async (req, res) => {
   try {
-    const { branch, created_at } = req.query;
+    const { 
+      branch, 
+      created_at, 
+      page = 1, 
+      limit = 100,
+      search,
+      status,
+      counselor_id,
+      priority,
+      country,
+      source,
+      leadType,
+      startDate,
+      endDate,
+      followUp, // today, thisWeek, overdue
+      nextFollowUpFrom,
+      nextFollowUpTo,
+      lastFollowUpFrom,
+      lastFollowUpTo,
+      sortBy
+    } = req.query;
 
-    let query = `
-      SELECT 
-        i.*, 
-        u.full_name AS counselor_name,
-       (
-  SELECT DATE_FORMAT(fh.next_followup_date, '%Y-%m-%d %H:%i:%s')
-  FROM followuphistory fh 
-  WHERE fh.inquiry_id = i.id 
-  ORDER BY fh.next_followup_date DESC
-  LIMIT 1
-) AS next_followup_date,
-
-(
-  SELECT DATE_FORMAT(fh.last_followup_date, '%Y-%m-%d %H:%i:%s')
-  FROM followuphistory fh 
-  WHERE fh.inquiry_id = i.id 
-  ORDER BY fh.last_followup_date DESC
-  LIMIT 1
-) AS last_followup_date
-
-      FROM inquiries i
-      LEFT JOIN users u ON i.counselor_id = u.counselor_id
-      WHERE i.lead_status = 'Converted to Lead'
-    `;
-
+    const offset = (parseInt(page) - 1) * parseInt(limit);
     const params = [];
-    const conditions = [];
+    const conditions = ["i.lead_status = 'Converted to Lead'"];
 
-    // ✅ Branch filter (with “Both” logic)
+    // Construct the subqueries for follow-up dates
+    const nextFollowUpSubquery = `(
+      SELECT DATE_FORMAT(fh.next_followup_date, '%Y-%m-%d %H:%i:%s')
+      FROM followuphistory fh 
+      WHERE fh.inquiry_id = i.id 
+      ORDER BY fh.next_followup_date DESC
+      LIMIT 1
+    )`;
+
+    const lastFollowUpSubquery = `(
+      SELECT DATE_FORMAT(fh.last_followup_date, '%Y-%m-%d %H:%i:%s')
+      FROM followuphistory fh 
+      WHERE fh.inquiry_id = i.id 
+      ORDER BY fh.last_followup_date DESC
+      LIMIT 1
+    )`;
+
+    // Follow-up Preset Filter
+    if (followUp) {
+      const today = new Date().toISOString().split('T')[0];
+      if (followUp === 'today') {
+        conditions.push(`DATE(${nextFollowUpSubquery}) = ?`);
+        params.push(today);
+      } else if (followUp === 'thisWeek') {
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        const nextWeekStr = nextWeek.toISOString().split('T')[0];
+        conditions.push(`DATE(${nextFollowUpSubquery}) BETWEEN ? AND ?`);
+        params.push(today, nextWeekStr);
+      } else if (followUp === 'overdue') {
+        conditions.push(`DATE(${nextFollowUpSubquery}) < ?`);
+        params.push(today);
+      }
+    }
+
+    // 1. Branch filter
     if (branch && branch !== 'Both') {
       conditions.push(`i.branch = ?`);
       params.push(branch);
@@ -731,34 +766,127 @@ export const getAllConvertedLeads = async (req, res) => {
       params.push('Sylhet', 'Dhaka');
     }
 
-    // ✅ Created_at filter (from inquiries)
+    // 2. Created_at filter
     if (created_at) {
       conditions.push(`DATE(i.created_at) >= ?`);
       params.push(created_at);
     }
 
-    // ✅ Add conditions if any
-    if (conditions.length > 0) {
-      query += ' AND ' + conditions.join(' AND ');
+    // 3. Search filter
+    if (search) {
+      conditions.push(`(i.full_name LIKE ? OR i.email LIKE ? OR i.phone_number LIKE ?)`);
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
     }
 
-    // ✅ Order by created_at ascending
-    query += ' ORDER BY i.created_at ASC';
+    // 4. Status filter
+    if (status) {
+      conditions.push(`i.new_leads = ?`);
+      params.push(status);
+    }
 
-    // ✅ Execute query
+    // 5. Counselor filter
+    if (counselor_id) {
+      conditions.push(`i.counselor_id = ?`);
+      params.push(counselor_id);
+    }
+
+    // 6. Priority filter
+    if (priority) {
+      conditions.push(`i.priority = ?`);
+      params.push(priority);
+    }
+
+    // 7. Country filter
+    if (country) {
+      conditions.push(`i.country = ?`);
+      params.push(country);
+    }
+
+    // 8. Source filter
+    if (source) {
+      conditions.push(`i.source = ?`);
+      params.push(source);
+    }
+
+    // 9. Lead Type filter
+    if (leadType) {
+      conditions.push(`i.inquiry_type = ?`);
+      params.push(leadType);
+    }
+
+    // 10. Date Range filters
+    if (startDate && endDate) {
+      conditions.push(`DATE(i.created_at) BETWEEN ? AND ?`);
+      params.push(startDate, endDate);
+    }
+
+    // 11. Follow-up filters (These use the subqueries, so they might be slower, but we limit rows later)
+    if (nextFollowUpFrom && nextFollowUpTo) {
+      conditions.push(`${nextFollowUpSubquery} BETWEEN ? AND ?`);
+      params.push(`${nextFollowUpFrom} 00:00:00`, `${nextFollowUpTo} 23:59:59`);
+    }
+
+    if (lastFollowUpFrom && lastFollowUpTo) {
+      conditions.push(`${lastFollowUpSubquery} BETWEEN ? AND ?`);
+      params.push(`${lastFollowUpFrom} 00:00:00`, `${lastFollowUpTo} 23:59:59`);
+    }
+
+    let query = `
+      SELECT 
+        i.*, 
+        u.full_name AS counselor_name,
+        creator.full_name AS creator_name,
+        assigner.full_name AS assigner_name,
+        ${nextFollowUpSubquery} AS next_followup_date,
+        ${lastFollowUpSubquery} AS last_followup_date
+      FROM inquiries i
+      LEFT JOIN users u ON i.counselor_id = u.counselor_id
+      LEFT JOIN users creator ON i.created_by = creator.id
+      LEFT JOIN users assigner ON i.assigned_by = assigner.id
+    `;
+
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(' AND ');
+    }
+
+    // 12. Sorting
+    if (sortBy) {
+      if (sortBy === "newToOld") query += " ORDER BY i.created_at DESC";
+      else if (sortBy === "oldToNew") query += " ORDER BY i.created_at ASC";
+      else if (sortBy === "aToZ") query += " ORDER BY i.full_name ASC";
+      else if (sortBy === "zToA") query += " ORDER BY i.full_name DESC";
+      else if (sortBy === "updatedAt") query += " ORDER BY i.updated_at DESC";
+      else query += " ORDER BY i.created_at DESC";
+    } else {
+      query += " ORDER BY i.created_at DESC";
+    }
+
+    // 13. Pagination (Total count first)
+    const countQuery = `SELECT COUNT(*) as total FROM inquiries i WHERE ${conditions.join(' AND ')}`;
+    const [countResult] = await db.query(countQuery, params);
+    const total = countResult[0]?.total || 0;
+
+    // Apply limit and offset
+    query += ` LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), offset);
+
     const [results] = await db.query(query, params);
 
-    if (results.length === 0) {
-      return res.status(404).json({ message: 'No converted leads found' });
-    }
-
-    res.status(200).json(results);
+    res.status(200).json({
+      data: results,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / limit)
+    });
 
   } catch (error) {
     console.error("Error fetching converted leads:", error);
     res.status(500).json({ message: 'Server error', error });
   }
 };
+
 
 
 
@@ -867,11 +995,11 @@ export const getConvertedLeadsByCounselorId = async (req, res) => {
       LEFT JOIN 
         users u ON i.counselor_id = u.counselor_id
       WHERE 
-        i.counselor_id = ?
+        (i.counselor_id = ? OR i.created_by = (SELECT id FROM users WHERE counselor_id = ? LIMIT 1))
         AND (i.lead_status = 'Converted to Lead' OR i.new_leads IN (${placeholders}))
     `;
 
-    const params = [id, ...allowedNewLeads];
+    const params = [id, id, ...allowedNewLeads];
     const [result] = await db.query(query, params);
 
     if (result.length === 0) {

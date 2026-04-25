@@ -1,3 +1,6 @@
+
+
+
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -5,7 +8,7 @@ import helmet from 'helmet';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
+  import { fileURLToPath } from 'url';
 import fileUpload from 'express-fileupload';
 dotenv.config();
 const app = express();
@@ -15,7 +18,7 @@ const __dirname = path.dirname(__filename);
 const tempDir = path.join(__dirname, 'tmp');
 // 🔐 Middleware
 app.use(cors({
-  origin: '* ',
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
 }));
 app.use(helmet());

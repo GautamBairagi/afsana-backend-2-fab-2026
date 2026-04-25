@@ -143,7 +143,7 @@ export const getPaymentsByid = async (req, res) => {
         s.id AS student_id
       FROM payments p
       INNER JOIN students s ON CAST(p.name AS UNSIGNED) = s.id
-      INNER JOIN student_invoice i ON s.id = i.student_id
+      LEFT JOIN student_invoice i ON s.id = i.student_id
       LEFT JOIN universities u ON p.university = u.id
       LEFT JOIN branches b ON p.branch = b.id
       WHERE s.id = ?

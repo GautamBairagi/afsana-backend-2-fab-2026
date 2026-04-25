@@ -55,16 +55,26 @@ export const getProcessorById = async (req, res) => {
 
 export const updateProcessor = async (req, res) => {
   const { id } = req.params;
-  const { full_name, email, phone } = req.body;
+  const { full_name, email, phone, password } = req.body;
   try {
-    const [existing] = await db.query('SELECT id FROM users WHERE id = ? AND role = ?', [id, 'processor']);
+    const [existing] = await db.query('SELECT id FROM users WHERE id = ? AND role = ?', [id, 'processors']);
     if (existing.length === 0) {
       return res.status(404).json({ message: 'Processor not found' });
     }
-    await db.query(
-      `UPDATE users SET full_name = ?, email = ?, phone = ?WHERE id = ? AND role = ?`,
-      [full_name, email, phone, id, 'processors']
-    );
+
+    let query = `UPDATE users SET full_name = ?, email = ?, phone = ?`;
+    let params = [full_name, email, phone];
+
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      query += `, password = ?`;
+      params.push(hashedPassword);
+    }
+
+    query += ` WHERE id = ? AND role = ?`;
+    params.push(id, 'processors');
+
+    await db.query(query, params);
     res.status(200).json({ message: 'Processor updated successfully' });
   } catch (err) {
     console.error('Update Processor Error:', err);

@@ -1,41 +1,35 @@
 import db from '../config/db.js';
 
 export const saveMessage = async ({ sender_id, receiver_id, chatId, message, timestamp, status }) => {
-  const query = `INSERT INTO messages (chatId, sender_id, receiver_id, message, timestamp, status) VALUES (?, ?, ?, ?, ?, ?)`;
-  const values = [chatId, sender_id, receiver_id, message, timestamp, status];
+  // Use 'chats' table. Note: 'chats' table doesn't have 'chatId' column, 
+  // but it has 'sender_id', 'receiver_id', 'message', 'created_at', etc.
+  const query = `INSERT INTO chats (sender_id, receiver_id, message, created_at, type) VALUES (?, ?, ?, ?, 'text')`;
+  const values = [sender_id, receiver_id, message, timestamp];
   const [result] = await db.query(query, values);
   return result.insertId;
 };
 
 export const getPendingMessages = async (receiver_id) => {
-  const query = `SELECT id, chatId, sender_id, message, timestamp FROM messages WHERE receiver_id = ? AND status = 'sent'`;
+  const query = `SELECT id, sender_id, message, created_at as timestamp FROM chats WHERE receiver_id = ? AND is_read = 0`;
   const [rows] = await db.execute(query, [receiver_id]);
   return rows;
 };
 
 export const updateMessageStatus = async (messageIds, status) => {
-  const query = `UPDATE messages SET status = ? WHERE id IN (?)`;
-  await db.query(query, [status, messageIds]);
+  const query = `UPDATE chats SET is_read = 1 WHERE id IN (?)`;
+  await db.query(query, [messageIds]);
 };
 
-// export const getChatHistory = async (user1, user2) => {
-//   const chatId = [user1, user2].sort((a, b) => a - b).join('_');
-//   const query = `SELECT * FROM messages WHERE chatId = ? ORDER BY timestamp ASC`;
-//   const [rows] = await db.execute(query, [chatId]);
-//   return rows;
-// };
-
-
-export const getChatHistory = async (chatId, limit = 50, offset = 0) => {
+export const getChatHistory = async (user1, user2, limit = 50, offset = 0) => {
   const query = `
-    SELECT * FROM messages 
-    WHERE chatId = ? 
-    ORDER BY timestamp ASC 
+    SELECT *, created_at as timestamp FROM chats 
+    WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+    ORDER BY created_at ASC 
     LIMIT ? OFFSET ?
   `;
 
   try {
-    const [rows] = await db.query(query, [chatId, limit, offset]);
+    const [rows] = await db.query(query, [user1, user2, user2, user1, limit, offset]);
     return rows;
   } catch (err) {
     console.error("Error in getChatHistory:", err.message);
@@ -48,9 +42,13 @@ export const getChatHistory = async (chatId, limit = 50, offset = 0) => {
 export const getChatList = async (userId) => {
   const query = `
     SELECT 
-      chatId, 
-      MAX(timestamp) as lastMessageTime 
-    FROM messages 
+      CASE 
+        WHEN CAST(sender_id AS UNSIGNED) < CAST(receiver_id AS UNSIGNED) 
+        THEN CONCAT(sender_id, '_', receiver_id)
+        ELSE CONCAT(receiver_id, '_', sender_id)
+      END AS chatId,
+      MAX(created_at) as lastMessageTime 
+    FROM chats 
     WHERE sender_id = ? OR receiver_id = ? 
     GROUP BY chatId 
     ORDER BY lastMessageTime DESC

@@ -10,8 +10,19 @@ export const handleSocketConnection = (io) => {
             console.log(`✅ User joined room: ${userId}`);
         });
 
+        socket.on('registerUser', (userId) => {
+            socket.join(String(userId));
+            console.log(`✅ User registered/joined room: ${userId}`);
+        });
+
+        socket.on('joinRoom', ({ user_id, other_user_id }) => {
+            const roomId = [user_id, other_user_id].sort((a, b) => a - b).join('_');
+            socket.join(roomId);
+            console.log(`✅ User ${user_id} joined chat room: ${roomId}`);
+        });
+
         // ✅ Step 2: Send Message Handler
-        socket.on('send_message', async ({ group_id, receiver_id, message, sender_id, type }) => {
+        const handleSendMessage = async ({ group_id, receiver_id, message, sender_id, type }) => {
             console.log(`📨 send_message → sender: ${sender_id}, receiver: ${receiver_id}, group: ${group_id}, message: ${message}`);
 
             try {
@@ -24,12 +35,51 @@ export const handleSocketConnection = (io) => {
                     const [savedMessage] = await db.query(`SELECT * FROM chats WHERE id = ?`, [result.insertId]);
                     const messageData = savedMessage[0];
 
-                    // ✅ Send to sender and receiver rooms only
+                    // ✅ Send to rooms (Single standardized event)
                     if (group_id) {
-                        io.to(String(group_id)).emit('new_message', messageData); // group room
+                        io.to(String(group_id)).emit('receive_message', messageData); 
                     } else {
-                        io.to(String(sender_id)).emit('new_message', messageData);
-                        io.to(String(receiver_id)).emit('new_message', messageData);
+                        const roomId = [sender_id, receiver_id].sort((a, b) => a - b).join('_');
+                        io.to(roomId).emit('receive_message', messageData);
+                        // Also notify receiver's private room for global notifications
+                        io.to(String(receiver_id)).emit('receive_message', messageData); 
+                    }
+
+                    // ✅ Dashboard Notification Logic (Existing)
+                    try {
+                        const [receiverUser] = await db.query(`SELECT id, role, counselor_id, student_id, staff_id FROM users WHERE id = ?`, [receiver_id]);
+                        if (receiverUser.length > 0) {
+                            const user = receiverUser[0];
+                            let query = "";
+                            let values = [];
+                            const msg = `New message from ${sender_id}`;
+
+                            if (user.role === 'counselor') {
+                                query = `INSERT INTO dashboard_notifications (counselor_id, cNotification, message) VALUES (?, 1, ?)`;
+                                values = [user.counselor_id, msg];
+                            } else if (user.role === 'student') {
+                                query = `INSERT INTO dashboard_notifications (student_id, sNotification, message) VALUES (?, 1, ?)`;
+                                values = [user.student_id, msg];
+                            } else if (user.role === 'admin') {
+                                query = `INSERT INTO dashboard_notifications (user_id, aNotification, message) VALUES (?, 1, ?)`;
+                                values = [user.id, msg];
+                            } else if (user.role === 'processor' || user.role === 'processors') {
+                                query = `INSERT INTO dashboard_notifications (processor_id, pNotification, message) VALUES (?, 1, ?)`;
+                                values = [user.id, msg];
+                            }
+
+                            if (query) {
+                                await db.query(query, values);
+                                io.emit("dashboardUpdated", {
+                                    student_id: user.student_id,
+                                    counselor_id: user.counselor_id,
+                                    processor_id: user.processor_id,
+                                    user_id: user.id
+                                });
+                            }
+                        }
+                    } catch (notifyErr) {
+                        console.error('❌ Notification error:', notifyErr);
                     }
                 } else {
                     socket.emit('message_error', { error: 'Failed to send message' });
@@ -38,11 +88,25 @@ export const handleSocketConnection = (io) => {
                 console.error('❌ send_message error:', err);
                 socket.emit('message_error', { error: 'Message failed', details: err.message });
             }
-        });
+        };
+
+        socket.on('send_message', handleSendMessage);
+        // Deprecated 'sendMessage' removed to prevent duplicates
 
         // ✅ Step 3: Get Messages
-        socket.on('get_messages', async ({ sender_id, receiver_id, group_id }) => {
-            console.log(`📥 get_messages → sender: ${sender_id}, receiver: ${receiver_id}, group: ${group_id}`);
+        const handleGetMessages = async ({ sender_id, receiver_id, group_id, chatId }) => {
+            let s_id = sender_id;
+            let r_id = receiver_id;
+            
+            if (chatId && !s_id && !r_id) {
+                const parts = chatId.split('_');
+                if (parts.length === 2) {
+                   s_id = parts[0];
+                   r_id = parts[1];
+                }
+            }
+
+            console.log(`📥 get_messages → sender: ${s_id}, receiver: ${r_id}, group: ${group_id}, chatId: ${chatId}`);
             try {
                 let messages = [];
 
@@ -58,7 +122,7 @@ export const handleSocketConnection = (io) => {
                     `, [group_id]);
 
                     messages = rows;
-                } else if (sender_id && receiver_id) {
+                } else if (s_id && r_id) {
                     const [rows] = await db.query(`
                         SELECT 
                             c.*, 
@@ -73,19 +137,21 @@ export const handleSocketConnection = (io) => {
                         )
                         AND c.group_id IS NULL
                         ORDER BY c.created_at ASC
-                    `, [sender_id, receiver_id, receiver_id, sender_id]);
+                    `, [s_id, r_id, r_id, s_id]);
 
                     messages = rows;
                 } else {
                     return socket.emit('message_error', { error: "Invalid query parameters" });
                 }
 
-                socket.emit('messages', messages);
+                socket.emit('chat_history', { messages }); 
             } catch (err) {
                 console.error('❌ get_messages error:', err);
                 socket.emit('message_error', { error: "Failed to fetch messages", details: err.message });
             }
-        });
+        };
+
+        socket.on('get_chat_history', handleGetMessages);
 
         // ✅ Disconnect
         socket.on('disconnect', () => {

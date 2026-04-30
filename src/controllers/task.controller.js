@@ -340,6 +340,30 @@ export const updateTask = async (req, res) => {
     );
 
     if (result.affectedRows === 0) return res.status(404).json({ message: 'Task not found' });
+
+    // ✅ Notification Logic for Task Completion
+    if (status && (status.toLowerCase() === 'completed' || status.toLowerCase() === 'complete')) {
+      try {
+        const msg = `Task Completed: ${title}`;
+        await db.query(
+          `INSERT INTO dashboard_notifications 
+           (counselor_id, student_id, sNotification, cNotification, aNotification, message)
+           VALUES (?, ?, 1, 1, 1, ?)`,
+          [counselor_id, student_id, msg]
+        );
+
+        // 🔔 Emit real-time update
+        io.emit("dashboardUpdated", { 
+          student_id, 
+          counselor_id, 
+          admin: true,
+          message: msg 
+        });
+      } catch (notifyErr) {
+        console.error("Task Completion Notification Error:", notifyErr);
+      }
+    }
+
     res.status(200).json({ message: 'Task updated successfully' });
   } catch (err) {
     console.error('Update Task Error:', err);
@@ -459,6 +483,33 @@ export const updateTaskNotesAndStatus = async (req, res) => {
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'Task not found' });
+    }
+
+    // ✅ Notification Logic for Task Completion
+    if (status && (status.toLowerCase() === 'completed' || status.toLowerCase() === 'complete')) {
+      try {
+        const [taskData] = await db.query("SELECT title, counselor_id, student_id FROM tasks WHERE id = ?", [id]);
+        if (taskData.length > 0) {
+          const { title, counselor_id, student_id } = taskData[0];
+          const msg = `Task Completed: ${title}`;
+          await db.query(
+            `INSERT INTO dashboard_notifications 
+             (counselor_id, student_id, sNotification, cNotification, aNotification, message)
+             VALUES (?, ?, 1, 1, 1, ?)`,
+            [counselor_id, student_id, msg]
+          );
+
+          // 🔔 Emit real-time update
+          io.emit("dashboardUpdated", { 
+            student_id, 
+            counselor_id, 
+            admin: true,
+            message: msg 
+          });
+        }
+      } catch (notifyErr) {
+        console.error("Task Completion Notification Error:", notifyErr);
+      }
     }
 
     res.status(200).json({ message: 'Task updated successfully' });

@@ -48,11 +48,15 @@ export const handleSocketConnection = (io) => {
                     // ✅ Dashboard Notification Logic (Existing)
                     try {
                         const [receiverUser] = await db.query(`SELECT id, role, counselor_id, student_id, staff_id FROM users WHERE id = ?`, [receiver_id]);
+                        const [senderUser] = await db.query(`SELECT full_name FROM users WHERE id = ?`, [sender_id]);
+                        
                         if (receiverUser.length > 0) {
                             const user = receiverUser[0];
+                            const senderName = senderUser.length > 0 ? senderUser[0].full_name : "Someone";
+                            
                             let query = "";
                             let values = [];
-                            const msg = `New message from ${sender_id}`;
+                            const msg = `New message from ${senderName}`;
 
                             if (user.role === 'counselor') {
                                 query = `INSERT INTO dashboard_notifications (counselor_id, cNotification, message) VALUES (?, 1, ?)`;
@@ -174,16 +178,16 @@ export const handleSocketConnection = (io) => {
 
     if (student_id) {
       query =
-        "SELECT * FROM dashboard_notifications WHERE student_id = ? AND sNotification = 1";
+        "SELECT * FROM dashboard_notifications WHERE student_id = ? AND sNotification = 1 ORDER BY created_at DESC";
       values = [student_id];
     } else if (counselor_id) {
       query =
-        "SELECT * FROM dashboard_notifications WHERE counselor_id = ? AND cNotification = 1";
+        "SELECT * FROM dashboard_notifications WHERE counselor_id = ? AND cNotification = 1 ORDER BY created_at DESC";
       values = [counselor_id];
     } else if (staff_id) {
       console.log("⚙️ staff mode with ID:", staff_id);
       query =
-        "SELECT * FROM dashboard_notifications WHERE staff_id = ? AND staffNotification = 1";
+        "SELECT * FROM dashboard_notifications WHERE staff_id = ? AND staffNotification = 1 ORDER BY created_at DESC";
       values = [staff_id];
       console.log("🧑‍💼 Staff Query:", query, "Values:", values);
     }
@@ -191,11 +195,11 @@ export const handleSocketConnection = (io) => {
     else if (processor_id) {
       console.log("⚙️ Processor mode with ID:", processor_id);
       query =
-        "SELECT * FROM dashboard_notifications WHERE processor_id = ? AND pNotification = 1";
+        "SELECT * FROM dashboard_notifications WHERE processor_id = ? AND pNotification = 1 ORDER BY created_at DESC";
       values = [processor_id];
     } else{
       query =
-             "SELECT * FROM dashboard_notifications WHERE aNotification = 1";
+             "SELECT * FROM dashboard_notifications WHERE aNotification = 1 ORDER BY created_at DESC";
     }
 
     // "SELECT * FROM dashboard_notifications WHERE aNotification = 1";

@@ -344,19 +344,69 @@ export const sataffdashboard = async (req, res) => {
 export const studentsdashboard = async (req, res) => {
   try {
     const { student_id } = req.params;
-    const [taskCount] = await db.query(`SELECT COUNT(*) AS totaltasks FROM tasks WHERE student_id = ?`, [student_id]);
-    const [paymentCount] = await db.query(`SELECT COUNT(*) AS totalpayments FROM payments WHERE name = ?`, [student_id]);
-    const [Todalvisa_processCount] = await db.query(`SELECT COUNT(*) AS totalvisa_process FROM visa_process WHERE student_id = ?`, [student_id]);
+    
+    // Count tasks that are NOT completed/complete
+    const [pendingTaskCount] = await db.query(
+      `SELECT COUNT(*) AS pendingtasks FROM tasks WHERE student_id = ? AND status NOT IN ('Completed', 'Complete', 'completed', 'complete')`, 
+      [student_id]
+    );
+
+    // Count payments that are NOT paid/approved
+    const [pendingPaymentCount] = await db.query(
+      `SELECT COUNT(*) AS pendingpayments FROM payments p 
+       INNER JOIN students s ON CAST(p.name AS UNSIGNED) = s.id 
+       WHERE s.id = ? AND p.payment_status NOT IN ('Paid', 'paid', 'Approved', 'Approve', 'approved', 'approve')`, 
+      [student_id]
+    );
+
+    const [visaProcessCount] = await db.query(
+      `SELECT COUNT(*) AS totalvisa_process FROM visa_process WHERE student_id = ?`, 
+      [student_id]
+    );
+    
     res.status(200).json({
       success: true,
       data: {
-        totaltasks: taskCount[0].totaltasks,
-        totalpayments: paymentCount[0].totalpayments,
-        totalvisa_process: Todalvisa_processCount[0].totalvisa_process,
+        totaltasks: pendingTaskCount[0].pendingtasks,
+        totalpayments: pendingPaymentCount[0].pendingpayments,
+        totalvisa_process: visaProcessCount[0].totalvisa_process,
       }
     });
   } catch (error) {
     console.error("❌ Dashboard summary error:", error);
+    res.status(500).json({ success: false, message: "Internal Server Error" });
+  }
+};
+
+export const getRecentUpdates = async (req, res) => {
+  try {
+    const { student_id } = req.params;
+    
+    // Fetch recent tasks, visa status changes, and notifications
+    const [tasks] = await db.query(`
+      SELECT 'task' as type, title as title, description as description, created_at as date 
+      FROM tasks WHERE student_id = ? ORDER BY created_at DESC LIMIT 3
+    `, [student_id]);
+
+    const [notifications] = await db.query(`
+      SELECT 'notification' as type, 
+             IF(u.full_name IS NOT NULL, REPLACE(dn.message, dn.user_id, u.full_name), dn.message) as title, 
+             '' as description, dn.created_at as date 
+      FROM dashboard_notifications dn
+      LEFT JOIN users u ON dn.user_id = u.id
+      WHERE dn.student_id = ? ORDER BY dn.created_at DESC LIMIT 3
+    `, [student_id]);
+
+    const updates = [...tasks, ...notifications]
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 5);
+
+    res.status(200).json({
+      success: true,
+      data: updates
+    });
+  } catch (error) {
+    console.error("❌ Recent updates error:", error);
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };

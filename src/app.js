@@ -74,6 +74,8 @@ import aiChatRoutes from './routers/aiChatRoutes.js'; // Import AI chat routes
 import masteradminRoutes from './routers/masteradminRoutes.js'; // Import AI chat routes
 import followUpHistoryRoutes from './routers/followUpHistoryRoutes.js';
 import notesRoutes from './routers/notesRoutes.js';
+import studentUploadsRoutes from './routers/studentUploads.routes.js';
+import supportTicketsRoutes from './routers/supportTickets.routes.js';
 
 // ✅ Route handling
 
@@ -109,6 +111,8 @@ app.use('/api', aiChatRoutes);
 app.use('/api', followUpHistoryRoutes);
 app.use('/api', notesRoutes);
 app.use('/api', masteradminRoutes);
+app.use('/api', studentUploadsRoutes);
+app.use('/api', supportTicketsRoutes);
 
 
 // ✅ Log every incoming request

@@ -1,6 +1,14 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import db from '../config/db.js';
+import { v2 as cloudinary } from "cloudinary";
+import fs from 'fs';
+
+cloudinary.config({
+  cloud_name: 'dkqcqrrbp',
+  api_key: '418838712271323',
+  api_secret: 'p12EKWICdyHWx8LcihuWYqIruWQ'
+});
 
 export const getAssignedStaffForStudent = async (req, res) => {
   const { student_id } = req.params;
@@ -123,18 +131,9 @@ export const login = async (req, res) => {
           role: user.role,
           student_id: user.student_id,
           staff_id: results.staff_id,
-          // father_name : maindetails[0].father_name,
-          // admission_no : maindetails[0].admission_no, 
-
-          // phone : maindetails[0].mobile_number,
-          // university_id : maindetails[0].university_id,
-          // date_of_birth : maindetails[0].date_of_birth,
-          // gender : maindetails[0].gender,
-          // category : maindetails[0].category,
-          // address : maindetails[0].address,
-          // photo : maindetails[0].photo ? `${req.protocol}://${req.get('host')}${maindetails[0].photo}` : null,
-          // documents : maindetails[0].documents,
-          // created_at : maindetails[0].created_at
+          photo: maindetails[0]?.photo 
+            ? (maindetails[0].photo.startsWith('http') ? maindetails[0].photo : `${req.protocol}://${req.get('host')}${maindetails[0].photo}`) 
+            : null,
         },
         permissions: permission
       });
@@ -157,6 +156,9 @@ export const login = async (req, res) => {
           full_name: user.full_name,
           role: user.role,
           counselor_id: user.counselor_id,
+          photo: maindetails[0]?.photo 
+            ? (maindetails[0].photo.startsWith('http') ? maindetails[0].photo : `${req.protocol}://${req.get('host')}${maindetails[0].photo}`) 
+            : null,
         },
         permissions: permission
       });
@@ -171,7 +173,7 @@ export const login = async (req, res) => {
         address: user.address,
         phone: user.phone,
         staff_id: user.staff_id,
-
+        photo: user.photo ? (user.photo.startsWith('http') ? user.photo : `${req.protocol}://${req.get('host')}${user.photo}`) : null,
       },
       permissions: permission
     });
@@ -293,7 +295,7 @@ export const getuserById = async (req, res) => {
           gender: student.gender,
           category: student.category,
           address: student.address,
-          photo: student.photo ? `${req.protocol}://${req.get('host')}${student.photo}` : null,
+          photo: student.photo ? (student.photo.startsWith('http') ? student.photo : `${req.protocol}://${req.get('host')}${student.photo}`) : null,
           documents: student.documents,
           created_at: student.created_at
         }
@@ -328,12 +330,13 @@ export const getuserById = async (req, res) => {
           counselor_id: user.counselor_id,
           phone: counselor.phone,
           status: counselor.status,
-          university_name: universityName
+          university_name: universityName,
+          photo: counselor.photo ? (counselor.photo.startsWith('http') ? counselor.photo : `${req.protocol}://${req.get('host')}${counselor.photo}`) : null,
         }
       });
     }
 
-    // General User (e.g., Admin)
+    // General User (e.g., Admin or Staff)
     return res.json({
       user: {
         id: user.id,
@@ -341,7 +344,8 @@ export const getuserById = async (req, res) => {
         full_name: user.full_name,
         role: user.role,
         address: user.address,
-        phone: user.phone
+        phone: user.phone,
+        photo: user.photo ? (user.photo.startsWith('http') ? user.photo : `${req.protocol}://${req.get('host')}${user.photo}`) : null,
       }
     });
 
@@ -581,9 +585,17 @@ export const createStudentWithGoogle = async (req, res) => {
         { expiresIn: "7d" }
       );
 
+      const [studentData] = await db.query("SELECT photo FROM students WHERE id = ?", [existing[0].student_id]);
+      const photo = studentData[0]?.photo 
+        ? (studentData[0].photo.startsWith('http') ? studentData[0].photo : `${req.protocol}://${req.get('host')}${studentData[0].photo}`) 
+        : null;
+
       return res.status(200).json({
         message: "User already registered. Please log in.",
-        user: existing[0],
+        user: {
+          ...existing[0],
+          photo: photo
+        },
         token,
         status: "existing",
       });
@@ -1047,8 +1059,8 @@ export const getStudentById = async (req, res) => {
     }
     const parsedRows = student.map((row) => ({
       ...row,
-      photo: row.photo ? `${req.protocol}://${req.get("host")}${row.photo}` : null,
-      documents: row.documents ? `${req.protocol}://${req.get("host")}${row.documents}` : null,
+      photo: row.photo ? (row.photo.startsWith('http') ? row.photo : `${req.protocol}://${req.get("host")}${row.photo}`) : null,
+      documents: row.documents ? (row.documents.startsWith('http') ? row.documents : `${req.protocol}://${req.get("host")}${row.documents}`) : null,
     }));
     res.status(200).json(parsedRows[0]);
   } catch (error) {
@@ -1109,8 +1121,8 @@ export const getStudentByCouseloerId = async (req, res) => {
     }
     const parsedRows = student.map((row) => ({
       ...row,
-      photo: row.photo ? `${req.protocol}://${req.get("host")}${row.photo}` : null,
-      documents: row.documents ? `${req.protocol}://${req.get("host")}${row.documents}` : null,
+      photo: row.photo ? (row.photo.startsWith('http') ? row.photo : `${req.protocol}://${req.get("host")}${row.photo}`) : null,
+      documents: row.documents ? (row.documents.startsWith('http') ? row.documents : `${req.protocol}://${req.get("host")}${row.documents}`) : null,
     }));
     res.status(200).json(parsedRows);
   } catch (error) {
@@ -1638,7 +1650,8 @@ export const getVisaProcessBystudentidsss = async (req, res) => {
       `
       SELECT 
         vp.*,
-        u.name AS university_names
+        u.name AS university_name,
+        u.location AS country
       FROM visa_process vp
       LEFT JOIN universities u 
         ON vp.university_id = u.id
@@ -1669,4 +1682,54 @@ export const getVisaProcessBystudentidsss = async (req, res) => {
 };
 
 
+
+export const updateProfilePhoto = async (req, res) => {
+  const { id } = req.params; // this is now users.id for all roles
+  const photo = req.files?.photo;
+
+  if (!photo) {
+    return res.status(400).json({ message: "No photo provided" });
+  }
+
+  try {
+    // 1. Fetch user to determine role
+    const [userRows] = await db.query("SELECT * FROM users WHERE id = ?", [id]);
+    if (userRows.length === 0) {
+      return res.status(404).json({ message: "User record not found" });
+    }
+    const user = userRows[0];
+
+    // 2. Upload to Cloudinary
+    const folder = "student_profiles"; // keeping same folder for backwards compatibility
+    const result = await cloudinary.uploader.upload(photo.tempFilePath, {
+      folder: folder,
+      resource_type: "image"
+    });
+
+    const photoUrl = result.secure_url;
+
+    // 3. Update main users table
+    await db.query("UPDATE users SET photo = ? WHERE id = ?", [photoUrl, id]);
+
+    // 4. Update specific role table if applicable
+    if (user.role === 'student' && user.student_id) {
+      await db.query("UPDATE students SET photo = ? WHERE id = ?", [photoUrl, user.student_id]);
+    } else if (user.role === 'counselor' && user.counselor_id) {
+      await db.query("UPDATE counselors SET photo = ? WHERE id = ?", [photoUrl, user.counselor_id]);
+    }
+
+    // Clean up temp file
+    if (fs.existsSync(photo.tempFilePath)) {
+      fs.unlinkSync(photo.tempFilePath);
+    }
+
+    res.status(200).json({
+      message: "Profile photo updated successfully",
+      photo: photoUrl
+    });
+  } catch (error) {
+    console.error("Error updating profile photo:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
 

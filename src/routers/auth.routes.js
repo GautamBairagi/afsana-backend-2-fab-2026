@@ -8,10 +8,14 @@ import {
   getVisaProcessBystudentidsss, getAssignedStudents, getAssignedCounselor, 
   editStudent, forgotPassword, resetPassword, getStudentByProcessorId, 
   getStudentByCouseloerId, getAssignedStudentsincounserdashboard, 
-  getAssignedStudentsinProcessordashboard, getAssignedStaffForStudent 
+  getAssignedStudentsinProcessordashboard, getAssignedStaffForStudent,
+  updateProfilePhoto
 } from '../controllers/auth.controller.js';
 // import { authenticate } from '../middlewares/auth.middleware.js';
 const router = express.Router();
+
+router.put('/updateProfilePhoto/:id', updateProfilePhoto);
+
 router.post('/register', register);
 router.post('/login', login);
 router.get('/getUser/:id',getuserById)

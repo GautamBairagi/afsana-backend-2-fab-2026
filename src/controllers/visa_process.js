@@ -4,6 +4,7 @@ import { studentNameById } from '../models/student.model.js';
 import { universityNameById } from '../models/universities.model.js';
 import { v2 as cloudinary } from "cloudinary";
 import fs from 'fs';
+import { sendNotification } from '../utils/notification.util.js';
 
 cloudinary.config({
     cloud_name: 'dkqcqrrbp',
@@ -166,6 +167,20 @@ export const createVisaProcess = async (req, res) => {
             id: result.insertId,
             ...data
         });
+
+        // ✅ Notification Logic
+        try {
+            await sendNotification({
+                student_id: data.student_id,
+                counselor_id: data.counselor_id,
+                processor_id: data.processor_id,
+                user_id: 1, // Notify Admin
+                message: `Visa Processing Started 🚀 for student ${data.full_name} (${data.applied_program}).`,
+                socketData: { type: 'visa_start' }
+            });
+        } catch (notifyErr) {
+            console.error("❌ Visa Start Notification Error:", notifyErr);
+        }
     } catch (error) {
         console.error('Error:', error);
         res.status(500).json({ message: 'Failed to create record', error: error.message });
@@ -292,6 +307,48 @@ export const updateVisaProcess = async (req, res) => {
             affectedRows: result.affectedRows,
             updatedFields: updates
         });
+
+        // ✅ Notification Logic
+        try {
+            const [currentData] = await db.query(
+                "SELECT student_id, counselor_id, processor_id, full_name, applied_program FROM visa_process WHERE id = ?", 
+                [id]
+            );
+
+            if (currentData.length > 0) {
+                const { student_id, counselor_id, processor_id, full_name, applied_program } = currentData[0];
+                let notificationMessage = "";
+
+                if (updates.visa_approval_visa_processing_stage === 1) {
+                    notificationMessage = `Visa Approved! 🥳 Student ${full_name}'s visa for ${applied_program} has been approved.`;
+                } else if (updates.visa_rejection_visa_processing_stage === 1) {
+                    notificationMessage = `Visa Rejected ❌ for student ${full_name}. Please check the reason.`;
+                } else if (updates.final_offer_visa_processing_stage === 1) {
+                    notificationMessage = `Final Offer Letter Received! 📄 for student ${full_name}.`;
+                } else if (updates.tuition_fee_visa_processing_stage === 1) {
+                    notificationMessage = `Tuition Fee Paid ✅ for student ${full_name}.`;
+                } else if (updates.offer_letter_visa_processing_stage === 1) {
+                    notificationMessage = `Conditional Offer Letter Received 📄 for student ${full_name}.`;
+                } else if (updates.appointment_visa_processing_stage === 1) {
+                    notificationMessage = `Visa Appointment Scheduled 📅 for student ${full_name}.`;
+                } else if (updates.university_application_visa_processing_stage === 1) {
+                    notificationMessage = `Application Submitted to University 🎓 for student ${full_name}.`;
+                }
+
+                if (notificationMessage) {
+                    await sendNotification({
+                        student_id,
+                        counselor_id,
+                        processor_id,
+                        user_id: 1, // Notify Admin
+                        message: notificationMessage,
+                        socketData: { type: 'visa_update', stage: updates }
+                    });
+                }
+            }
+        } catch (notifyErr) {
+            console.error("❌ Visa Notification Error:", notifyErr);
+        }
     } catch (error) {
         console.error('Update error:', error);
         res.status(500).json({ message: 'Update failed', error: error.message });

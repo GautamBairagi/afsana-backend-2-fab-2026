@@ -304,35 +304,99 @@ export const getCounselorDashboardData = async (req, res) => {
   }
 };
 
-export const sataffdashboard = async (req, res) => {
+export const staffdashboard = async (req, res) => {
   try {
-    const { branch, created_at } = req.query;
+    const { branch, created_at, fromDate, toDate, country, counselor_id, staff_id } = req.query;
     const timeZone = '+05:30';
-    let leadQuery = `SELECT COUNT(*) AS totalleads FROM inquiries WHERE lead_status = 'Converted to Lead'`;
-    let inquiryQuery = `SELECT COUNT(*) AS totalinquiries FROM inquiries`;
-    const leadParams = [];
-    const inquiryParams = [];
-    if (branch && branch.trim() !== "") {
-      leadQuery += " AND branch = ?";
-      inquiryQuery += " WHERE branch = ?";
-      leadParams.push(branch);
-      inquiryParams.push(branch);
+
+    let baseConditions = [];
+    let params = [];
+
+    // Base Staff filter
+    if (staff_id) {
+      baseConditions.push("assigned_staff_id = ?");
+      params.push(staff_id);
+    } else if (branch && branch.trim() !== "") {
+      // Fallback to branch if staff_id is missing (legacy behavior)
+      baseConditions.push("branch = ?");
+      params.push(branch);
     }
-    if (created_at) {
-      leadQuery += ` AND DATE(CONVERT_TZ(created_at, '+00:00', '${timeZone}')) >= ?`;
-      inquiryQuery += ` AND DATE(CONVERT_TZ(created_at, '+00:00', '${timeZone}')) >= ?`;
-      leadParams.push(created_at);
-      inquiryParams.push(created_at);
+
+    if (fromDate && toDate) {
+      baseConditions.push(`DATE(CONVERT_TZ(created_at, '+00:00', '${timeZone}')) BETWEEN ? AND ?`);
+      params.push(fromDate, toDate);
+    } else if (created_at) {
+      baseConditions.push(`DATE(CONVERT_TZ(created_at, '+00:00', '${timeZone}')) >= ?`);
+      params.push(created_at);
     }
-    const [totalLeads] = await db.query(leadQuery, leadParams);
-    const [totalInquiries] = await db.query(inquiryQuery, inquiryParams);
+
+    if (country && country.trim() !== "") {
+      baseConditions.push("country = ?");
+      params.push(country);
+    }
+
+    if (counselor_id) {
+      baseConditions.push("counselor_id = ?");
+      params.push(counselor_id);
+    }
+
+    let whereClause = baseConditions.length > 0 ? "WHERE " + baseConditions.join(" AND ") : "";
+    let leadWhereClause = whereClause ? whereClause + " AND lead_status = 'Converted to Lead'" : "WHERE lead_status = 'Converted to Lead'";
+
+    const leadQuery = `SELECT COUNT(*) AS totalleads FROM inquiries ${leadWhereClause}`;
+    const inquiryQuery = `SELECT COUNT(*) AS totalinquiries FROM inquiries ${whereClause}`;
+    const officeVisitedQuery = `SELECT COUNT(*) AS office_visited FROM inquiries ${whereClause ? whereClause + " AND " : "WHERE "} new_leads IN ('Visited Office', 'Office Visit Confirmed')`;
+    const scheduledVisitsQuery = `SELECT COUNT(*) AS scheduled_visits FROM inquiries ${whereClause ? whereClause + " AND " : "WHERE "} new_leads = 'Office Visit Scheduled'`;
+    
+    // Total follow-ups for these inquiries
+    const followUpQuery = `
+      SELECT COUNT(*) AS total_follow_ups 
+      FROM followuphistory 
+      WHERE inquiry_id IN (SELECT id FROM inquiries ${whereClause})
+    `;
+
+    // Monthly Target (Current Month Office Visits)
+    const currentMonthCondition = `MONTH(office_visit_date) = MONTH(CURRENT_DATE()) AND YEAR(office_visit_date) = YEAR(CURRENT_DATE())`;
+    const targetAchievedQuery = `
+      SELECT COUNT(*) AS monthly_achieved 
+      FROM inquiries 
+      ${whereClause ? whereClause + " AND " : "WHERE "} 
+      new_leads IN ('Visited Office', 'Office Visit Confirmed') AND ${currentMonthCondition}
+    `;
+
+    // params are used multiple times for the first queries
+    const [totalLeads] = await db.query(leadQuery, params);
+    const [totalInquiries] = await db.query(inquiryQuery, params);
+    const [officeVisited] = await db.query(officeVisitedQuery, params);
+    const [scheduledVisits] = await db.query(scheduledVisitsQuery, params);
+    const [totalFollowUps] = await db.query(followUpQuery, params);
+    const [monthlyAchieved] = await db.query(targetAchievedQuery, params);
+
+    const leadsCount = totalLeads[0].totalleads || 0;
+    const inquiriesCount = totalInquiries[0].totalinquiries || 0;
+    const visitedCount = officeVisited[0].office_visited || 0;
+    const scheduledCount = scheduledVisits[0].scheduled_visits || 0;
+    const followUpsCount = totalFollowUps[0].total_follow_ups || 0;
+    const achievedCount = monthlyAchieved[0].monthly_achieved || 0;
+
+    const conversionRate = leadsCount > 0 ? ((visitedCount / leadsCount) * 100).toFixed(2) : 0;
+
     res.status(200).json({
       success: true,
       data: {
         branch: branch || "All Branches",
-        total_leads: totalLeads[0].totalleads,
-        total_inquiries: totalInquiries[0].totalinquiries,
-        chart_data: [{ label: "Leads", value: totalLeads[0].totalleads }, { label: "Inquiries", value: totalInquiries[0].totalinquiries }]
+        total_leads: leadsCount,
+        total_inquiries: inquiriesCount,
+        office_visited: visitedCount,
+        scheduled_visits: scheduledCount,
+        total_follow_ups: followUpsCount,
+        monthly_achieved: achievedCount,
+        monthly_target: 100, // Hardcoded target
+        conversion_rate: parseFloat(conversionRate),
+        chart_data: [
+          { label: "Leads", value: leadsCount }, 
+          { label: "Inquiries", value: inquiriesCount }
+        ]
       }
     });
   } catch (error) {

@@ -416,7 +416,7 @@ export const deleteInquiry = async (req, res) => {
 
 export const getAllInquiries = async (req, res) => {
   try {
-    const { branch, created_at } = req.query; // e.g. ?branch=Sylhet&created_at=2025-10-07
+    const { branch, created_at, assigned_staff_id } = req.query; // e.g. ?branch=Sylhet&created_at=2025-10-07
     const timeZone = '+05:30'; // India Standard Time (IST)
 
     let query = `
@@ -428,7 +428,10 @@ export const getAllInquiries = async (req, res) => {
     const params = [];
     const conditions = [];
 
-    if (branch && branch !== 'Both') {
+    if (assigned_staff_id) {
+      conditions.push(`i.assigned_staff_id = ?`);
+      params.push(assigned_staff_id);
+    } else if (branch && branch !== 'Both') {
       conditions.push(`i.branch = ?`);
       params.push(branch);
     } else if (branch === 'Both') {
@@ -715,7 +718,8 @@ export const getAllConvertedLeads = async (req, res) => {
       nextFollowUpTo,
       lastFollowUpFrom,
       lastFollowUpTo,
-      sortBy
+      sortBy,
+      assigned_staff_id
     } = req.query;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -757,8 +761,11 @@ export const getAllConvertedLeads = async (req, res) => {
       }
     }
 
-    // 1. Branch filter
-    if (branch && branch !== 'Both') {
+    // 1. Branch or Staff filter
+    if (assigned_staff_id) {
+      conditions.push(`i.assigned_staff_id = ?`);
+      params.push(assigned_staff_id);
+    } else if (branch && branch !== 'Both') {
       conditions.push(`i.branch = ?`);
       params.push(branch);
     } else if (branch === 'Both') {
@@ -1024,6 +1031,8 @@ export const updateLeadStatus = async (req, res) => {
     "Contacted",
     "Follow-Up Needed",
     "Visited Office",
+    "Office Visit Scheduled",
+    "Office Visit Confirmed",
     "Not Interested",
     "Next Intake Interested",
     "Registered",
@@ -1043,7 +1052,12 @@ export const updateLeadStatus = async (req, res) => {
       return res.status(404).json({ message: 'Inquiry not found' });
     }
 
-    await db.query("UPDATE inquiries SET new_leads = ? WHERE id = ?", [new_leads, inquiry_id]);
+    let updateQuery = "UPDATE inquiries SET new_leads = ? WHERE id = ?";
+    if (["Visited Office", "Office Visit Confirmed"].includes(new_leads)) {
+      updateQuery = "UPDATE inquiries SET new_leads = ?, office_visit_date = IFNULL(office_visit_date, NOW()) WHERE id = ?";
+    }
+
+    await db.query(updateQuery, [new_leads, inquiry_id]);
 
     res.status(200).json({ message: `Lead status updated to '${new_leads}'` });
 

@@ -526,6 +526,71 @@ export const getAllStaff = async (_, res) => {
 // };
 
 
+// ✅ Assign a lead/inquiry to a specific staff member (Admin only, branch-aware)
+export const assignLeadToStaff = async (req, res) => {
+  const { inquiry_id, staff_id } = req.body;
+
+  if (!inquiry_id || !staff_id) {
+    return res.status(400).json({ message: 'inquiry_id and staff_id are required' });
+  }
+
+  try {
+    // 1. Get inquiry branch
+    const [inquiries] = await db.query(
+      `SELECT id, branch, full_name FROM inquiries WHERE id = ?`,
+      [inquiry_id]
+    );
+    if (!inquiries.length) {
+      return res.status(404).json({ message: 'Inquiry not found' });
+    }
+    const inquiry = inquiries[0];
+
+    // 2. Get staff branch
+    const [staffRows] = await db.query(
+      `SELECT id, branch FROM staff WHERE id = ?`,
+      [staff_id]
+    );
+    if (!staffRows.length) {
+      return res.status(404).json({ message: 'Staff not found' });
+    }
+    const staff = staffRows[0];
+
+    // 3. Branch-match validation (staff with "Both" can be assigned to any branch)
+    const staffBranch = (staff.branch || '').toLowerCase();
+    const inquiryBranch = (inquiry.branch || '').toLowerCase();
+    if (staffBranch !== 'both' && staffBranch !== inquiryBranch) {
+      return res.status(403).json({
+        message: `Branch mismatch: Staff is from "${staff.branch}" but inquiry is from "${inquiry.branch}".`
+      });
+    }
+
+    // 4. Assign
+    await db.query(
+      `UPDATE inquiries SET assigned_staff_id = ? WHERE id = ?`,
+      [staff_id, inquiry_id]
+    );
+
+    // 5. Staff ka full_name fetch karo for notification
+    const [staffUser] = await db.query(
+      `SELECT u.full_name FROM users u WHERE u.staff_id = ?`,
+      [staff_id]
+    );
+    const staffName = staffUser[0]?.full_name || 'Staff';
+
+    console.log(`✅ Inquiry "${inquiry.full_name}" assigned to staff "${staffName}"`);
+
+    res.status(200).json({
+      message: `Lead assigned to ${staffName} successfully`,
+      inquiry_id,
+      staff_id,
+      staff_name: staffName
+    });
+  } catch (err) {
+    console.error('❌ assignLeadToStaff error:', err);
+    res.status(500).json({ message: 'Internal server error', error: err.message });
+  }
+};
+
 export const getAllStaffbybranch = async (req, res) => {
   try {
     const { branch } = req.query;

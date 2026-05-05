@@ -4,7 +4,7 @@ import fs from 'fs';
 
 // Upload new document
 export const uploadDocument = async (req, res) => {
-  const { student_id, document_type } = req.body;
+  const { student_id, document_type, uploaded_by, uploader_id, university_id } = req.body;
   const file = req.files?.document;
 
   if (!student_id || !document_type || !file) {
@@ -21,10 +21,15 @@ export const uploadDocument = async (req, res) => {
     const original_name = file.name;
 
     const [insertResult] = await db.query(
-      `INSERT INTO student_uploads (student_id, document_type, file_url, original_name) 
-       VALUES (?, ?, ?, ?)`,
-      [student_id, document_type, file_url, original_name]
+      `INSERT INTO student_uploads (student_id, document_type, file_url, original_name, uploaded_by, uploader_id, university_id) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [student_id, document_type, file_url, original_name, uploaded_by || 'student', uploader_id || null, university_id || null]
     );
+
+    // ✅ Optional: Notification to student if uploaded by processor
+    if (uploaded_by === 'processor') {
+        // notification logic here
+    }
 
     if (fs.existsSync(file.tempFilePath)) {
       fs.unlinkSync(file.tempFilePath);
@@ -64,10 +69,11 @@ export const getAllStudentDocuments = async (req, res) => {
 
   try {
     let query = `
-      SELECT su.*, s.full_name AS student_name, u.email, s.mobile_number 
+      SELECT su.*, s.full_name AS student_name, u.email, s.mobile_number, s.country, univ.name AS university_name 
       FROM student_uploads su
       LEFT JOIN students s ON su.student_id = s.id
       LEFT JOIN users u ON s.user_id = u.id
+      LEFT JOIN universities univ ON su.university_id = univ.id
     `;
     let params = [];
 

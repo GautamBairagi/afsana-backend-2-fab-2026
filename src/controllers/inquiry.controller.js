@@ -76,7 +76,7 @@ export const createInquiry = async (req, res) => {
     course_name, country, city, date_of_birth, gender, medium, study_level, study_field,
     intake, budget, consent, highest_level, ssc, hsc, bachelor, university, test_type, test_name, overall_score, reading_score, writing_score, speaking_score, listening_score, date_of_inquiry, address, present_address, additionalNotes,
     study_gap, visa_refused, refusal_reason, education_background, english_proficiency, company_name, job_title,
-    job_duration, preferred_countries, priority, created_by
+    job_duration, preferred_countries, priority, created_by, assigned_staff_id
   } = req.body;
   console.log("req.body ", req.body);
   try {
@@ -94,20 +94,22 @@ export const createInquiry = async (req, res) => {
     }
 
     const formattedCounselorId = (counselor_id === "undefined" || counselor_id === undefined) ? null : counselor_id;
+    const formattedAssignedStaffId = (assigned_staff_id === "undefined" || assigned_staff_id === undefined) ? null : assigned_staff_id;
+
     const [result] = await db.query(
       `INSERT INTO inquiries 
         (counselor_id, inquiry_type, source, branch, full_name, phone_number, email, 
          course_name, country, city, date_of_birth, gender, medium, study_level, study_field,
     intake, budget, consent,  highest_level, ssc, hsc ,bachelor ,university , test_type, test_name, overall_score, reading_score, writing_score, speaking_score, listening_score,   date_of_inquiry, address, present_address, additionalNotes ,
         study_gap, visa_refused, refusal_reason, education_background, english_proficiency, company_name, job_title, 
-         job_duration, preferred_countries, lead_status, new_leads, payment_status, assignment_description, priority, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Converted to Lead', 'New Lead', 0, 0, ?, ?);`,
+         job_duration, preferred_countries, lead_status, new_leads, payment_status, assignment_description, priority, created_by, assigned_staff_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Converted to Lead', 'New Lead', 0, 0, ?, ?, ?);`,
       [
         formattedCounselorId, inquiry_type, source, branch, full_name, phone_number, email,
         course_name, country, city, date_of_birth, gender, medium, study_level, study_field,
         intake, budget, consent, highest_level, ssc, hsc, bachelor, university, test_type, test_name, overall_score, reading_score, writing_score, speaking_score, listening_score, date_of_inquiry, address, present_address, additionalNotes, study_gap, visa_refused, refusal_reason,
         JSON.stringify(education_background), JSON.stringify(english_proficiency),
-        company_name, job_title, job_duration, JSON.stringify(preferred_countries), priority, created_by
+        company_name, job_title, job_duration, JSON.stringify(preferred_countries), priority, created_by, formattedAssignedStaffId
       ]
     );
 
@@ -420,17 +422,18 @@ export const getAllInquiries = async (req, res) => {
     const timeZone = '+05:30'; // India Standard Time (IST)
 
     let query = `
-      SELECT i.*, u.full_name AS counselor_name
+      SELECT i.*, u.full_name AS counselor_name, staff_user.full_name AS assigned_staff_name
       FROM inquiries i
       LEFT JOIN users u ON i.counselor_id = u.counselor_id
+      LEFT JOIN users staff_user ON i.assigned_staff_id = staff_user.staff_id
     `;
 
     const params = [];
     const conditions = [];
 
     if (assigned_staff_id) {
-      conditions.push(`i.assigned_staff_id = ?`);
-      params.push(assigned_staff_id);
+      conditions.push(`(i.assigned_staff_id = ? OR i.created_by = (SELECT id FROM users WHERE staff_id = ?))`);
+      params.push(assigned_staff_id, assigned_staff_id);
     } else if (branch && branch !== 'Both') {
       conditions.push(`i.branch = ?`);
       params.push(branch);
@@ -763,8 +766,8 @@ export const getAllConvertedLeads = async (req, res) => {
 
     // 1. Branch or Staff filter
     if (assigned_staff_id) {
-      conditions.push(`i.assigned_staff_id = ?`);
-      params.push(assigned_staff_id);
+      conditions.push(`(i.assigned_staff_id = ? OR i.created_by = (SELECT id FROM users WHERE staff_id = ?))`);
+      params.push(assigned_staff_id, assigned_staff_id);
     } else if (branch && branch !== 'Both') {
       conditions.push(`i.branch = ?`);
       params.push(branch);
@@ -845,12 +848,14 @@ export const getAllConvertedLeads = async (req, res) => {
         u.full_name AS counselor_name,
         creator.full_name AS creator_name,
         assigner.full_name AS assigner_name,
+        staff_user.full_name AS assigned_staff_name,
         ${nextFollowUpSubquery} AS next_followup_date,
         ${lastFollowUpSubquery} AS last_followup_date
       FROM inquiries i
       LEFT JOIN users u ON i.counselor_id = u.counselor_id
       LEFT JOIN users creator ON i.created_by = creator.id
       LEFT JOIN users assigner ON i.assigned_by = assigner.id
+      LEFT JOIN users staff_user ON i.assigned_staff_id = staff_user.staff_id
     `;
 
     if (conditions.length > 0) {

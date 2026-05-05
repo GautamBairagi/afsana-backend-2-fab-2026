@@ -314,8 +314,8 @@ export const staffdashboard = async (req, res) => {
 
     // Base Staff filter
     if (staff_id) {
-      baseConditions.push("assigned_staff_id = ?");
-      params.push(staff_id);
+      baseConditions.push("(assigned_staff_id = ? OR created_by = (SELECT id FROM users WHERE staff_id = ?))");
+      params.push(staff_id, staff_id);
     } else if (branch && branch.trim() !== "") {
       // Fallback to branch if staff_id is missing (legacy behavior)
       baseConditions.push("branch = ?");
@@ -478,13 +478,109 @@ export const getRecentUpdates = async (req, res) => {
 export const processordashboard = async (req, res) => {
   try {
     const { processor_id } = req.params;
-    console.log("Fetching dashboard for processor:", processor_id);
+    const { search, fromDate, toDate, country, university } = req.query;
+    console.log("Fetching dashboard for processor:", processor_id, req.query);
+
+    // Build base conditions for students table
+    let studentConditions = ["processor_id = ?"];
+    let studentParams = [processor_id];
+
+    if (search) {
+      studentConditions.push("(full_name LIKE ? OR student_email LIKE ?)");
+      studentParams.push(`%${search}%`, `%${search}%`);
+    }
+    if (fromDate && toDate) {
+      studentConditions.push("created_at >= ? AND created_at <= ?");
+      studentParams.push(`${fromDate} 00:00:00`, `${toDate} 23:59:59`);
+    }
+    if (country) {
+      studentConditions.push("country = ?");
+      studentParams.push(country);
+    }
+    if (university) {
+      // Assuming university_name exists in students or we join.
+      // But simpler: just filter students who have applications in this university
+      studentConditions.push("id IN (SELECT student_id FROM studentapplicationprocess WHERE university_name = ?)");
+      studentParams.push(university);
+    }
+
+    const studentWhereClause = studentConditions.join(" AND ");
+
+    // Build base conditions for visa_process table
+    let visaConditions = ["processor_id = ?"];
+    let visaParams = [processor_id];
+
+    if (search) {
+      visaConditions.push("(full_name LIKE ? OR email LIKE ?)");
+      visaParams.push(`%${search}%`, `%${search}%`);
+    }
+    if (fromDate && toDate) {
+      visaConditions.push("created_at >= ? AND created_at <= ?");
+      visaParams.push(`${fromDate} 00:00:00`, `${toDate} 23:59:59`);
+    }
+    if (university) {
+      visaConditions.push("applied_program = ?");
+      visaParams.push(university);
+    }
+    // Note: visa_process doesn't have country directly, so we might skip it or join students.
+    if (country) {
+      visaConditions.push("student_id IN (SELECT id FROM students WHERE country = ?)");
+      visaParams.push(country);
+    }
+
+    const visaWhereClause = visaConditions.join(" AND ");
+
+    // Build base conditions for tasks table
+    let taskConditions = ["s.processor_id = ?"];
+    let taskParams = [processor_id];
+
+    if (search) {
+      taskConditions.push("(s.full_name LIKE ? OR t.title LIKE ?)");
+      taskParams.push(`%${search}%`, `%${search}%`);
+    }
+    if (fromDate && toDate) {
+      taskConditions.push("t.created_at >= ? AND t.created_at <= ?");
+      taskParams.push(`${fromDate} 00:00:00`, `${toDate} 23:59:59`);
+    }
+    if (country) {
+      taskConditions.push("s.country = ?");
+      taskParams.push(country);
+    }
+
+    const taskWhereClause = taskConditions.join(" AND ");
+
 
     // Queries
-    const [applicationCount] = await db.query(`SELECT COUNT(*) AS totalapplication FROM students WHERE processor_id = ?`, [processor_id]);
-    const [documentCount] = await db.query(`SELECT COUNT(*) AS totaldocumentCount FROM visa_process WHERE processor_id = ?`, [processor_id]);
-    const [taskCount] = await db.query(`SELECT COUNT(*) AS totaltasks FROM tasks t JOIN students s ON t.student_id = s.id WHERE s.processor_id = ?`, [processor_id]);
-    const [recentTasks] = await db.query(`SELECT t.id, t.title as name, t.due_date, t.status, s.full_name AS student_name FROM tasks t JOIN students s ON t.student_id = s.id WHERE s.processor_id = ? ORDER BY t.created_at DESC LIMIT 10`, [processor_id]);
+    const [applicationCount] = await db.query(`SELECT COUNT(*) AS totalapplication FROM students WHERE ${studentWhereClause}`, studentParams);
+    const [documentCount] = await db.query(`SELECT COUNT(*) AS totaldocumentCount FROM visa_process WHERE ${visaWhereClause}`, visaParams);
+    const [taskCount] = await db.query(`SELECT COUNT(*) AS totaltasks FROM tasks t JOIN students s ON t.student_id = s.id WHERE ${taskWhereClause}`, taskParams);
+    const [recentTasks] = await db.query(`SELECT t.id, t.title as name, t.due_date, t.status, s.full_name AS student_name FROM tasks t JOIN students s ON t.student_id = s.id WHERE ${taskWhereClause} ORDER BY t.created_at DESC LIMIT 10`, taskParams);
+
+    // All Stages Overview Query
+    const [stagesOverview] = await db.query(`
+      SELECT 
+        SUM(registration_visa_processing_stage) as registration,
+        SUM(documents_visa_processing_stage) as documents,
+        SUM(university_application_visa_processing_stage) as applied,
+        SUM(university_interview_visa_processing_stage) as interview,
+        SUM(offer_letter_visa_processing_stage) as offer_letter,
+        SUM(tuition_fee_visa_processing_stage) as tuition_fee,
+        SUM(visa_approval_visa_processing_stage) as visa_approved
+      FROM visa_process 
+      WHERE ${visaWhereClause}
+    `, visaParams);
+
+    // Helper to extract stage counts safely
+    const stageData = stagesOverview[0] || {};
+    const all_stages = {
+      "Registration": stageData.registration || 0,
+      "Documents": stageData.documents || 0,
+      "Applied": stageData.applied || 0,
+      "Interview": stageData.interview || 0,
+      "Offer Letter": stageData.offer_letter || 0,
+      "Tuition Fee": stageData.tuition_fee || 0,
+      "Visa Approved": stageData.visa_approved || 0
+    };
 
     console.log("Dashboard Stats for ID", processor_id, ":", {
       apps: applicationCount[0].totalapplication,
@@ -504,6 +600,7 @@ export const processordashboard = async (req, res) => {
           { label: 'Tasks', value: taskCount[0].totaltasks },
         ],
         recentTasks: recentTasks,
+        all_stages: all_stages
       }
     });
   } catch (error) {

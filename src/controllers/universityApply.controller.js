@@ -14,6 +14,7 @@ import { processor_name } from '../models/student.model.js';
 
 import cloudinary from "cloudinary";
 import fs from 'fs';
+import { io } from '../server.js';
 
 cloudinary.config({
     cloud_name: 'dkqcqrrbp',
@@ -150,6 +151,12 @@ export const createApply = async (req, res) => {
                     counselorName = counselor[0]?.full_name || '';
                 }
 
+                // ✅ Check if record already exists in visa_process
+                const [existing] = await db.query(
+                    "SELECT id FROM visa_process WHERE student_id = ? AND university_id = ?", 
+                    [student_id, university_id]
+                );
+
                 const visaData = {
                     student_id: student_id,
                     university_id: university_id,
@@ -159,29 +166,47 @@ export const createApply = async (req, res) => {
                     date_of_birth: student.date_of_birth,
                     passport_no: student.passport_1_no || '',
                     applied_program: universityName, 
-                    intake: 'Jan-2025', // Default intake or can be dynamic
+                    intake: 'Jan-2026', 
                     assigned_counselor: counselorName,
                     counselor_id: student.counselor_id,
-                    processor_id: student.processor_id,
+                    processor_id: data.processor_id || student.processor_id,
                     registration_date: new Date().toISOString().split('T')[0],
                     source: 'University Application',
-                    registration_visa_processing_stage: 1 // Mark the first stage as active
+                    registration_visa_processing_stage: 1 
                 };
 
-                // Check if a visa process already exists for this student and university to avoid duplicates
-                const [existing] = await db.query(
-                    "SELECT id FROM visa_process WHERE student_id = ? AND university_id = ?", 
-                    [student_id, university_id]
-                );
-                
                 if (existing.length === 0) {
                     await db.query("INSERT INTO visa_process SET ?", [visaData]);
                     console.log(`Visa process initialized for student ${student_id} and university ${university_id}`);
                 }
+
+                // ✅ Send Notifications
+                const processor_id = data.processor_id;
+                const [processorData] = await db.query("SELECT full_name FROM users WHERE id = ?", [processor_id]);
+                const Pname = processorData[0]?.full_name || "A processor";
+                
+                const notificationMsg = `${Pname} has applied to ${universityName} for student ${student.full_name}`;
+                
+                await db.query(
+                    `INSERT INTO dashboard_notifications 
+                     (counselor_id, student_id, processor_id, sNotification, cNotification, pNotification, message)
+                     VALUES (?, ?, ?, 1, 1, 1, ?)`,
+                    [student.counselor_id, student_id, processor_id, notificationMsg]
+                );
+
+                // 🔔 Socket emit
+                if (io) {
+                    io.to(String(student_id)).emit("dashboardUpdated", { student_id, message: notificationMsg });
+                    if (student.counselor_id) {
+                        io.to(String(student.counselor_id)).emit("dashboardUpdated", { counselor_id: student.counselor_id, message: notificationMsg });
+                    }
+                    io.to(String(processor_id)).emit("dashboardUpdated", { processor_id, message: "Application submitted successfully!" });
+                }
+
             }
         } catch (syncError) {
-            console.error('Failed to auto-sync with visa_process:', syncError);
-            // Non-blocking error for the main application process
+            console.error('Failed to auto-sync with visa_process or notify:', syncError);
+            // Non-blocking error
         }
 
         res.status(201).json({ message: 'Record created successfully', id: result.insertId });
@@ -1059,6 +1084,74 @@ export const updateApply = async (req, res) => {
     try {
         const query = `UPDATE studentapplicationprocess SET ? WHERE id = ?`;
         const [result] = await db.query(query, [data, id]);
+
+        // ✅ Automatically sync with visa_process table on update
+        try {
+            // Get student_id and university_id from the existing record if not in data
+            let student_id = data.student_id;
+            let university_id = data.university_id;
+
+            if (!student_id || !university_id) {
+                const [currentApp] = await db.query("SELECT student_id, university_id FROM studentapplicationprocess WHERE id = ?", [id]);
+                if (currentApp.length > 0) {
+                    student_id = student_id || currentApp[0].student_id;
+                    university_id = university_id || currentApp[0].university_id;
+                }
+            }
+
+            if (student_id && university_id) {
+                console.log("Syncing UPDATE with visa_process: student_id =", student_id, "university_id =", university_id);
+
+                const [studentData] = await db.query(`
+                    SELECT s.*, u.email 
+                    FROM students s 
+                    LEFT JOIN users u ON s.user_id = u.id 
+                    WHERE s.id = ?
+                `, [student_id]);
+
+                if (studentData.length > 0) {
+                    const student = studentData[0];
+                    const [uniData] = await db.query("SELECT name FROM universities WHERE id = ?", [university_id]);
+                    const universityName = uniData[0]?.name || 'Unknown University';
+
+                    let counselorName = '';
+                    if (student.counselor_id) {
+                        const [counselor] = await db.query("SELECT full_name FROM users WHERE counselor_id = ?", [student.counselor_id]);
+                        counselorName = counselor[0]?.full_name || '';
+                    }
+
+                    const visaData = {
+                        student_id: student_id,
+                        university_id: university_id,
+                        full_name: student.full_name,
+                        email: student.email || '',
+                        phone: student.mobile_number || '',
+                        date_of_birth: student.date_of_birth,
+                        passport_no: student.passport_1_no || '',
+                        applied_program: universityName, 
+                        intake: 'Jan-2026', 
+                        assigned_counselor: counselorName,
+                        counselor_id: student.counselor_id,
+                        processor_id: data.processor_id || student.processor_id,
+                        source: 'University Application Update',
+                        registration_visa_processing_stage: 1 
+                    };
+
+                    const [existing] = await db.query(
+                        "SELECT id FROM visa_process WHERE student_id = ? AND university_id = ?", 
+                        [student_id, university_id]
+                    );
+
+                    if (existing.length === 0) {
+                        await db.query("INSERT INTO visa_process SET ?", [visaData]);
+                    } else {
+                        await db.query("UPDATE visa_process SET ? WHERE student_id = ? AND university_id = ?", [visaData, student_id, university_id]);
+                    }
+                }
+            }
+        } catch (syncError) {
+            console.error('Failed to sync UPDATE with visa_process:', syncError);
+        }
 
         res.status(200).json({ message: 'Record updated successfully' });
     } catch (error) {

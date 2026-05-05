@@ -74,11 +74,12 @@ export const handleSocketConnection = (io) => {
 
                             if (query) {
                                 await db.query(query, values);
-                                io.emit("dashboardUpdated", {
+                                io.to(String(receiver_id)).emit("dashboardUpdated", {
                                     student_id: user.student_id,
                                     counselor_id: user.counselor_id,
                                     processor_id: user.processor_id,
-                                    user_id: user.id
+                                    user_id: user.id,
+                                    type: "chat"
                                 });
                             }
                         }

@@ -17,15 +17,41 @@ cloudinary.config({
 // CREATE
 export const createTask = async (req, res) => {
   try {
-    const {
-      title, user_id, due_date, counselor_id, student_id,
+    let {
+      title, task_name, user_id, assigned_by, due_date, counselor_id, student_id,
       description, priority, status, related_to, related_item,
       assigned_to, assigned_date, finishing_date
     } = req.body;
 
-    if (!title || !user_id || !due_date || !counselor_id || !student_id || !description || !priority || !status || !related_to || !related_item || !assigned_to || !assigned_date || !finishing_date) {
-      return res.status(400).json({ message: 'all fields are required' });
+    // Support for different frontend field names
+    title = title || task_name;
+    user_id = user_id || assigned_by;
+    status = status || 'Pending';
+    assigned_date = assigned_date || new Date().toISOString().split('T')[0];
+    finishing_date = finishing_date || due_date;
+
+    if (!title || !due_date || !student_id) {
+      return res.status(400).json({ message: 'title, due_date, and student_id are required' });
     }
+
+    // If counselor_id is missing, try to fetch it from student record
+    if (!counselor_id) {
+      const [studentRow] = await db.query("SELECT counselor_id, full_name FROM users WHERE student_id = ?", [student_id]);
+      if (studentRow.length > 0) {
+        counselor_id = studentRow[0].counselor_id || 0;
+        if (!related_item) related_item = studentRow[0].full_name;
+      } else {
+        counselor_id = 0;
+      }
+    }
+
+    // Default values for other fields if missing
+    if (!description) description = title;
+    if (!priority) priority = 'Medium';
+    if (!related_to) related_to = 'Student';
+    if (!related_item) related_item = `Student ID: ${student_id}`;
+    if (!assigned_to) assigned_to = student_id;
+    if (!user_id) user_id = 1; // Default to admin or creator
 
     let attachmentUrl = '';
 
@@ -47,12 +73,12 @@ export const createTask = async (req, res) => {
     }
 
     const [result] = await db.query(
-      `INSERT INTO tasks (title, due_date, counselor_id, student_id,
+      `INSERT INTO tasks (title, user_id, due_date, counselor_id, student_id,
         description, priority, status, related_to, related_item,
         assigned_to, assigned_date, finishing_date, attachment)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        title, due_date, counselor_id, student_id,
+        title, user_id, due_date, counselor_id, student_id,
         description, priority, status, related_to, related_item,
         assigned_to, assigned_date, finishing_date, attachmentUrl
       ]
@@ -63,30 +89,34 @@ export const createTask = async (req, res) => {
         "SELECT full_name FROM users WHERE counselor_id = ?",
         [counselor_id]
       );
-      const Cname = findCounselorName[0]?.full_name;
+      const Cname = findCounselorName[0]?.full_name || 'System';
 
       const [findStudentName] = await db.query(
         "SELECT full_name FROM users WHERE student_id = ?",
         [student_id]
       );
-      const Sname = findStudentName[0]?.full_name;
+      const Sname = findStudentName[0]?.full_name || 'Student';
 
       await db.query(
         `INSERT INTO dashboard_notifications 
          (counselor_id, student_id, sNotification, cNotification, message)
          VALUES (?, ?, ?, ?, ?)`,
-        [counselor_id, student_id, 1, 1, `A new task has been assigned to counselor ${Cname} and student ${Sname}`]
+        [counselor_id, student_id, 1, 1, `A new task has been assigned to student ${Sname}`]
       );
 
       // 🔔 Emit real-time update
-      io.to(String(student_id)).emit("dashboardUpdated", { student_id, message: `New Task Assigned: ${title}` });
-      io.to(String(counselor_id)).emit("dashboardUpdated", { counselor_id, message: `New Task Assigned: ${title}` });
+      if (io) {
+        io.to(String(student_id)).emit("dashboardUpdated", { student_id, message: `New Task Assigned: ${title}` });
+        if (counselor_id) {
+          io.to(String(counselor_id)).emit("dashboardUpdated", { counselor_id, message: `New Task Assigned: ${title}` });
+        }
+      }
     }
 
     res.status(201).json({ message: 'Task created successfully', taskId: result.insertId });
   } catch (err) {
     console.error('Create Task Error:', err);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'Internal server error', error: err.message });
   }
 };
 
@@ -488,24 +518,36 @@ export const updateTaskNotesAndStatus = async (req, res) => {
     // ✅ Notification Logic for Task Completion
     if (status && (status.toLowerCase() === 'completed' || status.toLowerCase() === 'complete')) {
       try {
-        const [taskData] = await db.query("SELECT title, counselor_id, student_id FROM tasks WHERE id = ?", [id]);
+        const [taskData] = await db.query("SELECT title, counselor_id, student_id, user_id FROM tasks WHERE id = ?", [id]);
         if (taskData.length > 0) {
-          const { title, counselor_id, student_id } = taskData[0];
-          const msg = `Task Completed: ${title}`;
+          const { title, counselor_id, student_id, user_id } = taskData[0];
+          
+          // Fetch student name for the message
+          const [studentRow] = await db.query("SELECT full_name FROM users WHERE student_id = ?", [student_id]);
+          const studentName = studentRow[0]?.full_name || "A student";
+          const msg = `${studentName} has completed the task: ${title}`;
+
+          // Insert notification
+          // We use user_id from tasks as the processor_id if it's the assigner
           await db.query(
             `INSERT INTO dashboard_notifications 
-             (counselor_id, student_id, sNotification, cNotification, aNotification, message)
-             VALUES (?, ?, 1, 1, 1, ?)`,
-            [counselor_id, student_id, msg]
+             (counselor_id, student_id, processor_id, sNotification, cNotification, aNotification, pNotification, message)
+             VALUES (?, ?, ?, 1, 1, 1, 1, ?)`,
+            [counselor_id, student_id, user_id, msg]
           );
 
           // 🔔 Emit real-time update
-          io.emit("dashboardUpdated", { 
-            student_id, 
-            counselor_id, 
-            admin: true,
-            message: msg 
-          });
+          if (io) {
+            // Notify specific student and counselor
+            io.to(String(student_id)).emit("dashboardUpdated", { student_id, message: msg });
+            if (counselor_id) {
+              io.to(String(counselor_id)).emit("dashboardUpdated", { counselor_id, message: msg });
+            }
+            // Notify the assigner (Processor) specifically
+            io.to(String(user_id)).emit("dashboardUpdated", { user_id, message: msg });
+            // Notify all admins if needed
+            io.emit("adminNotification", { message: msg });
+          }
         }
       } catch (notifyErr) {
         console.error("Task Completion Notification Error:", notifyErr);
@@ -568,6 +610,35 @@ export const reminder_task = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
+export const getTasksByProcessor = async (req, res) => {
+  try {
+    const { processor_id } = req.params;
+    if (!processor_id) {
+      return res.status(400).json({ message: 'processor_id is required' });
+    }
+
+    const [tasks] = await db.query('SELECT * FROM tasks WHERE user_id = ?', [processor_id]);
+
+    const data = await Promise.all(
+      tasks.map(async (task) => {
+        const studentID = task.student_id;
+        const [student_name_row] = await db.query("SELECT full_name FROM users WHERE student_id = ?", [studentID]);
+        
+        return {
+          ...task,
+          student_name: student_name_row[0]?.full_name || 'Unknown'
+        };
+      })
+    );
+
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('Get Processor Tasks Error:', error);
+    res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
+};
+
 
 
 

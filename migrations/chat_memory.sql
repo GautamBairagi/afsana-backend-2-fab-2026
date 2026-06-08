@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_token VARCHAR(255) NOT NULL UNIQUE,
+    lead_id INT NULL,
+    extracted_data JSON NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_token VARCHAR(255) NOT NULL,
+    sender ENUM('user', 'ai') NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_token) REFERENCES chat_sessions(session_token) ON DELETE CASCADE
+);

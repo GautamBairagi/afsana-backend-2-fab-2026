@@ -456,6 +456,7 @@ export const getAllStaff = async (_, res) => {
       `
       SELECT 
         s.*, 
+        u.id AS user_table_id,
         u.email, 
         u.full_name, 
         u.role 
@@ -468,16 +469,20 @@ export const getAllStaff = async (_, res) => {
       return res.status(200).json([]);
     }
 
-    // Fetch permissions for each staff member
-    const staffWithPermissions = await Promise.all(
-      rows.map(async (staff) => {
-        const [permissions] = await db.query(
-          `SELECT * FROM permissions WHERE user_id = (SELECT id FROM users WHERE staff_id = ?)`,
-          [staff.id]
-        );
-        return { ...staff, permissions };
-      })
-    );
+    // Fetch all permissions in exactly 1 single batch query instead of N queries
+    const [permissionsRows] = await db.query('SELECT * FROM permissions');
+    const permissionsMap = {};
+    permissionsRows.forEach(p => {
+      if (!permissionsMap[p.user_id]) {
+        permissionsMap[p.user_id] = [];
+      }
+      permissionsMap[p.user_id].push(p);
+    });
+
+    const staffWithPermissions = rows.map(staff => ({
+      ...staff,
+      permissions: permissionsMap[staff.user_table_id] || []
+    }));
 
     res.status(200).json(staffWithPermissions);
   } catch (err) {

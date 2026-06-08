@@ -155,6 +155,17 @@ export const createInquiry = async (req, res) => {
     console.log("notify", notify);
 
     res.status(201).json({ message: 'Inquiry created successfully', inquiryId: result.insertId });
+
+    // ✅ Background AI Processing: Calculate AI Score and Summary
+    import('../service/ai/lead_scoring.service.js')
+      .then(({ scoreLeadWithAI }) => {
+         const userId = null; // Background task, no specific user
+         return scoreLeadWithAI(result.insertId, userId);
+      })
+      .catch(err => {
+         console.error("[AI Lead Scoring] Error in background task:", err);
+      });
+
   } catch (err) {
     console.error('Create Inquiry error:', err);
     res.status(500).json({ message: 'Internal server error', error: err.message });
@@ -418,16 +429,26 @@ export const deleteInquiry = async (req, res) => {
 
 export const getAllInquiries = async (req, res) => {
   try {
-    const { branch, created_at, assigned_staff_id } = req.query; // e.g. ?branch=Sylhet&created_at=2025-10-07
+    const { 
+      branch, 
+      created_at, 
+      assigned_staff_id,
+      page = 1,
+      limit = 100,
+      search,
+      country,
+      source,
+      priority,
+      status,
+      inquiryType,
+      startDate,
+      endDate,
+      counselor_id,
+      sortBy
+    } = req.query;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
     const timeZone = '+05:30'; // India Standard Time (IST)
-
-    let query = `
-      SELECT i.*, u.full_name AS counselor_name, staff_user.full_name AS assigned_staff_name
-      FROM inquiries i
-      LEFT JOIN users u ON i.counselor_id = u.counselor_id
-      LEFT JOIN users staff_user ON i.assigned_staff_id = staff_user.staff_id
-    `;
-
     const params = [];
     const conditions = [];
 
@@ -438,27 +459,98 @@ export const getAllInquiries = async (req, res) => {
       conditions.push(`i.branch = ?`);
       params.push(branch);
     } else if (branch === 'Both') {
-      // When branch=Both, show both Sylhet and Dhaka data
       conditions.push(`i.branch IN (?, ?)`);
       params.push('Sylhet', 'Dhaka');
     }
 
-    // ✅ Filter by created_at date (IST)
     if (created_at) {
       conditions.push(`DATE(CONVERT_TZ(i.created_at, '+00:00', ?)) >= ?`);
       params.push(timeZone, created_at);
     }
 
-    // ✅ Append WHERE if conditions exist
-    if (conditions.length > 0) {
-      query += ` WHERE ` + conditions.join(' AND ');
+    if (search) {
+      conditions.push(`(i.full_name LIKE ? OR i.email LIKE ? OR i.phone_number LIKE ?)`);
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
     }
 
-    query += ` ORDER BY i.created_at DESC`; // Newest first
+    if (country) {
+      conditions.push(`i.country = ?`);
+      params.push(country);
+    }
+
+    if (source) {
+      conditions.push(`i.source = ?`);
+      params.push(source);
+    }
+
+    if (priority) {
+      conditions.push(`i.priority = ?`);
+      params.push(priority);
+    }
+
+    if (status) {
+      if (status === "0" || status === "New") {
+        conditions.push(`(i.lead_status = '0' OR i.lead_status = 'New')`);
+      } else {
+        conditions.push(`i.lead_status = ?`);
+        params.push(status);
+      }
+    }
+
+    if (inquiryType) {
+      conditions.push(`i.inquiry_type = ?`);
+      params.push(inquiryType);
+    }
+
+    if (startDate && endDate) {
+      conditions.push(`i.date_of_inquiry BETWEEN ? AND ?`);
+      params.push(startDate, endDate);
+    } else if (startDate) {
+      conditions.push(`i.date_of_inquiry >= ?`);
+      params.push(startDate);
+    } else if (endDate) {
+      conditions.push(`i.date_of_inquiry <= ?`);
+      params.push(endDate);
+    }
+
+    if (counselor_id) {
+      conditions.push(`i.counselor_id = ?`);
+      params.push(counselor_id);
+    }
+
+    let whereClause = '';
+    if (conditions.length > 0) {
+      whereClause = ` WHERE ` + conditions.join(' AND ');
+    }
+
+    // Count query
+    const countQuery = `SELECT COUNT(*) as total FROM inquiries i ${whereClause}`;
+    const [countResult] = await db.query(countQuery, params);
+    const total = countResult[0]?.total || 0;
+
+    let orderBy = 'ORDER BY i.created_at DESC';
+    if (sortBy) {
+      if (sortBy === 'newToOld') orderBy = 'ORDER BY i.date_of_inquiry DESC, i.created_at DESC';
+      else if (sortBy === 'oldToNew') orderBy = 'ORDER BY i.date_of_inquiry ASC, i.created_at ASC';
+      else if (sortBy === 'aToZ') orderBy = 'ORDER BY i.full_name ASC';
+      else if (sortBy === 'zToA') orderBy = 'ORDER BY i.full_name DESC';
+    }
+
+    let query = `
+      SELECT i.*, u.full_name AS counselor_name, staff_user.full_name AS assigned_staff_name
+      FROM inquiries i
+      LEFT JOIN users u ON i.counselor_id = u.counselor_id
+      LEFT JOIN users staff_user ON i.assigned_staff_id = staff_user.staff_id
+      ${whereClause}
+      ${orderBy}
+      LIMIT ? OFFSET ?
+    `;
+    params.push(parseInt(limit), offset);
 
     const [results] = await db.query(query, params);
 
-    // ✅ Parse JSON safely and handle test_type logic
+    // Parse JSON safely and handle test_type logic
     const inquiries = results.map(inquiry => {
       const parsed = {
         ...inquiry,
@@ -467,7 +559,6 @@ export const getAllInquiries = async (req, res) => {
         preferred_countries: JSON.parse(inquiry.preferred_countries || '[]'),
       };
 
-      // ✅ If test_type = "OtherText", hide unnecessary score fields
       if (inquiry.test_type === 'OtherText') {
         delete parsed.overall_score;
         delete parsed.reading_score;
@@ -479,7 +570,13 @@ export const getAllInquiries = async (req, res) => {
       return parsed;
     });
 
-    res.json(inquiries);
+    res.json({
+      data: inquiries,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / limit)
+    });
   } catch (err) {
     console.error('Get All Inquiries error:', err);
     res.status(500).json({ message: 'Internal server error' });
@@ -729,37 +826,20 @@ export const getAllConvertedLeads = async (req, res) => {
     const params = [];
     const conditions = ["i.lead_status = 'Converted to Lead'"];
 
-    // Construct the subqueries for follow-up dates
-    const nextFollowUpSubquery = `(
-      SELECT DATE_FORMAT(fh.next_followup_date, '%Y-%m-%d %H:%i:%s')
-      FROM followuphistory fh 
-      WHERE fh.inquiry_id = i.id 
-      ORDER BY fh.next_followup_date DESC
-      LIMIT 1
-    )`;
-
-    const lastFollowUpSubquery = `(
-      SELECT DATE_FORMAT(fh.last_followup_date, '%Y-%m-%d %H:%i:%s')
-      FROM followuphistory fh 
-      WHERE fh.inquiry_id = i.id 
-      ORDER BY fh.last_followup_date DESC
-      LIMIT 1
-    )`;
-
-    // Follow-up Preset Filter
+    // Follow-up Preset Filter using fh_latest
     if (followUp) {
       const today = new Date().toISOString().split('T')[0];
       if (followUp === 'today') {
-        conditions.push(`DATE(${nextFollowUpSubquery}) = ?`);
+        conditions.push(`DATE(fh_latest.next_followup_date) = ?`);
         params.push(today);
       } else if (followUp === 'thisWeek') {
         const nextWeek = new Date();
         nextWeek.setDate(nextWeek.getDate() + 7);
         const nextWeekStr = nextWeek.toISOString().split('T')[0];
-        conditions.push(`DATE(${nextFollowUpSubquery}) BETWEEN ? AND ?`);
+        conditions.push(`DATE(fh_latest.next_followup_date) BETWEEN ? AND ?`);
         params.push(today, nextWeekStr);
       } else if (followUp === 'overdue') {
-        conditions.push(`DATE(${nextFollowUpSubquery}) < ?`);
+        conditions.push(`DATE(fh_latest.next_followup_date) < ?`);
         params.push(today);
       }
     }
@@ -831,16 +911,31 @@ export const getAllConvertedLeads = async (req, res) => {
       params.push(startDate, endDate);
     }
 
-    // 11. Follow-up filters (These use the subqueries, so they might be slower, but we limit rows later)
+    // 11. Follow-up filters (Using fh_latest table)
     if (nextFollowUpFrom && nextFollowUpTo) {
-      conditions.push(`${nextFollowUpSubquery} BETWEEN ? AND ?`);
+      conditions.push(`fh_latest.next_followup_date BETWEEN ? AND ?`);
       params.push(`${nextFollowUpFrom} 00:00:00`, `${nextFollowUpTo} 23:59:59`);
     }
 
     if (lastFollowUpFrom && lastFollowUpTo) {
-      conditions.push(`${lastFollowUpSubquery} BETWEEN ? AND ?`);
+      conditions.push(`fh_latest.last_followup_date BETWEEN ? AND ?`);
       params.push(`${lastFollowUpFrom} 00:00:00`, `${lastFollowUpTo} 23:59:59`);
     }
+
+    const fromAndJoin = `
+      FROM inquiries i
+      LEFT JOIN users u ON i.counselor_id = u.counselor_id
+      LEFT JOIN users creator ON i.created_by = creator.id
+      LEFT JOIN users assigner ON i.assigned_by = assigner.id
+      LEFT JOIN users staff_user ON i.assigned_staff_id = staff_user.staff_id
+      LEFT JOIN (
+        SELECT inquiry_id, 
+               MAX(next_followup_date) AS next_followup_date, 
+               MAX(last_followup_date) AS last_followup_date
+        FROM followuphistory
+        GROUP BY inquiry_id
+      ) fh_latest ON i.id = fh_latest.inquiry_id
+    `;
 
     let query = `
       SELECT 
@@ -849,13 +944,9 @@ export const getAllConvertedLeads = async (req, res) => {
         creator.full_name AS creator_name,
         assigner.full_name AS assigner_name,
         staff_user.full_name AS assigned_staff_name,
-        ${nextFollowUpSubquery} AS next_followup_date,
-        ${lastFollowUpSubquery} AS last_followup_date
-      FROM inquiries i
-      LEFT JOIN users u ON i.counselor_id = u.counselor_id
-      LEFT JOIN users creator ON i.created_by = creator.id
-      LEFT JOIN users assigner ON i.assigned_by = assigner.id
-      LEFT JOIN users staff_user ON i.assigned_staff_id = staff_user.staff_id
+        DATE_FORMAT(fh_latest.next_followup_date, '%Y-%m-%d %H:%i:%s') AS next_followup_date,
+        DATE_FORMAT(fh_latest.last_followup_date, '%Y-%m-%d %H:%i:%s') AS last_followup_date
+      ${fromAndJoin}
     `;
 
     if (conditions.length > 0) {
@@ -875,7 +966,7 @@ export const getAllConvertedLeads = async (req, res) => {
     }
 
     // 13. Pagination (Total count first)
-    const countQuery = `SELECT COUNT(*) as total FROM inquiries i WHERE ${conditions.join(' AND ')}`;
+    const countQuery = `SELECT COUNT(*) as total ${fromAndJoin} WHERE ${conditions.join(' AND ')}`;
     const [countResult] = await db.query(countQuery, params);
     const total = countResult[0]?.total || 0;
 

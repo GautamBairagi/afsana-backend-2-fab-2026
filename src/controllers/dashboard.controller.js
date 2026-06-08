@@ -69,25 +69,33 @@ export const getDashboardDataAdmin = async (req, res) => {
       return `${hasExistingWhere ? ' AND ' : 'WHERE'} ${filters.join(' AND ')}`;
     };
 
-    const [totalLeads] = await db.query(`
-      SELECT COUNT(*) AS totalleads 
-      FROM inquiries 
-      WHERE lead_status = 'Converted to Lead'
-      ${buildWhereClause(leadFilters, true)}
-    `);
-
-    const [totalStudents] = await db.query(`SELECT COUNT(*) AS totalstudents FROM students ${buildWhereClause(commonFilters)}`);
-
-    const [totalCounselors] = await db.query(`
-      SELECT COUNT(*) AS totalcounselors 
-      FROM counselors c 
-      JOIN users u ON c.id = u.counselor_id 
-      ${buildWhereClause(counselorsFilter)}
-    `);
-    const [totalFollowUps] = await db.query(`SELECT COUNT(*) AS totalFollowUps FROM follow_ups ${buildWhereClause(commonFilters)}`);
-    const [totalTasks] = await db.query(`SELECT COUNT(*) AS totalTasks FROM tasks ${buildWhereClause(commonFilters)}`);
-    const [totalInquiries] = await db.query(`SELECT COUNT(*) AS totalInquiries FROM inquiries ${buildWhereClause(inquiryFilters)}`);
-    const [totalUniversities] = await db.query(`SELECT COUNT(*) AS totalUniversities FROM universities ${buildWhereClause(commonFilters)}`);
+    const [
+      [totalLeads],
+      [totalStudents],
+      [totalCounselors],
+      [totalFollowUps],
+      [totalTasks],
+      [totalInquiries],
+      [totalUniversities]
+    ] = await Promise.all([
+      db.query(`
+        SELECT COUNT(*) AS totalleads 
+        FROM inquiries 
+        WHERE lead_status = 'Converted to Lead'
+        ${buildWhereClause(leadFilters, true)}
+      `),
+      db.query(`SELECT COUNT(*) AS totalstudents FROM students ${buildWhereClause(commonFilters)}`),
+      db.query(`
+        SELECT COUNT(*) AS totalcounselors 
+        FROM counselors c 
+        JOIN users u ON c.id = u.counselor_id 
+        ${buildWhereClause(counselorsFilter)}
+      `),
+      db.query(`SELECT COUNT(*) AS totalFollowUps FROM follow_ups ${buildWhereClause(commonFilters)}`),
+      db.query(`SELECT COUNT(*) AS totalTasks FROM tasks ${buildWhereClause(commonFilters)}`),
+      db.query(`SELECT COUNT(*) AS totalInquiries FROM inquiries ${buildWhereClause(inquiryFilters)}`),
+      db.query(`SELECT COUNT(*) AS totalUniversities FROM universities ${buildWhereClause(commonFilters)}`)
+    ]);
     res.status(200).json({
       totalleads: totalLeads[0].totalleads,
       totalstudents: totalStudents[0].totalstudents,

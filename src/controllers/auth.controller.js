@@ -894,14 +894,18 @@ export const getAllStudents = async (req, res) => {
         u.email,
         u.full_name,
         u.role,
-        uni.name AS university_name
+        uni.name AS university_name,
+        uc.full_name AS counselorName
       FROM students s
       JOIN users u
         ON s.id = u.student_id
       LEFT JOIN universities uni
         ON s.university_id = uni.id
+      LEFT JOIN users uc
+        ON s.counselor_id = uc.counselor_id
     `);
-    const parsedRows = rows.map(row => ({
+    
+    const result = rows.map(row => ({
       ...row,
       photo: row.photo
         ? `${req.protocol}://${req.get("host")}${row.photo}`
@@ -909,18 +913,9 @@ export const getAllStudents = async (req, res) => {
       documents: row.documents
         ? `${req.protocol}://${req.get("host")}${row.documents}`
         : null,
+      counselorName: row.counselorName || "Not Assigned",
     }));
 
-
-    const result = await Promise.all(
-      rows.map(async (decision) => {
-        const counselorDetails = await getCounselorById(decision?.counselor_id);
-        return {
-          ...decision,
-          counselorName: counselorDetails[0]?.full_name || "Not Assigned",
-        };
-      })
-    );
     res.status(200).json(result);
   } catch (error) {
     console.error('Error fetching students:', error);

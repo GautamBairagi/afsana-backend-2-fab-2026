@@ -1,9 +1,8 @@
 import express from 'express';
 import { upload } from '../middlewares/upload.js';
 
-
-
 import {updateInquiryPriority, sendInquiryMail,  createInquiry, deleteInquiry, getAllInquiries, getInquiryById, updateInquiry, assignInquiry, getCounselorWisePerformance, getAllConvertedLeads, getAllleadsstatus, getCheckEligiblity, updateEligibilityStatus, updateLeadStatus , uploadDocuments, getConvertedLeadsByCounselorId, StudentAssignToProcessor} from '../controllers/inquiry.controller.js';
+import { aiScoreLead, aiLeadScoreHistory } from '../controllers/ai.lead_scoring.controller.js';
 // import { authenticate } from '../middlewares/auth.middleware.js';
 const router = express.Router();
 router.post('/inquiries', createInquiry);
@@ -36,5 +35,9 @@ router.put("/inquiries/:id", updateInquiry);
 
 // POST route for sending inquiry mail
 router.post("/send-inquiry-mail", sendInquiryMail);
+
+// ✅ AI Lead Scoring Routes (Phase 2)
+router.post('/inquiries/:id/ai-score', aiScoreLead);           // Trigger AI scoring for a lead
+router.get('/inquiries/:id/ai-score/history', aiLeadScoreHistory); // Get score history for a lead
 
 export default router;

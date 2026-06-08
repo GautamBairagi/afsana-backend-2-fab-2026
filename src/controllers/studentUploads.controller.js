@@ -1,6 +1,7 @@
 import db from '../config/db.js';
 import { v2 as cloudinary } from "cloudinary";
 import fs from 'fs';
+import { analyzeUploadedDocument } from '../service/ai/documentAnalysis.service.js';
 
 // Upload new document
 export const uploadDocument = async (req, res) => {
@@ -41,6 +42,12 @@ export const uploadDocument = async (req, res) => {
       file_url,
       original_name
     });
+
+    // ✅ Background AI Document Analysis
+    analyzeUploadedDocument(file_url, document_type, student_id).catch(err => {
+      console.error("[AI Document Analysis] Error in background task:", err);
+    });
+
   } catch (error) {
     console.error("Error uploading document:", error);
     res.status(500).json({ message: "Internal server error", error: error.message });

@@ -359,22 +359,48 @@ export const updateVisaProcess = async (req, res) => {
 // GET /api/visa-process
 export const GetVisaProcess = async (req, res) => {
     try {
-        const [rows] = await db.query(`
+        const { page, limit } = req.query;
+        
+        let countQuery = `
+            SELECT COUNT(*) as total 
+            FROM visa_process vp
+            LEFT JOIN students s ON vp.student_id = s.id
+            LEFT JOIN universities u ON vp.university_id = u.id
+        `;
+        const [countResult] = await db.query(countQuery);
+        const total = countResult[0]?.total || 0;
+
+        let query = `
             SELECT vp.*, s.country, u.name as university_name 
             FROM visa_process vp
             LEFT JOIN students s ON vp.student_id = s.id
             LEFT JOIN universities u ON vp.university_id = u.id
             ORDER BY (
-        registration_visa_processing_stage + 
-        documents_visa_processing_stage + 
-        university_application_visa_processing_stage + 
-        fee_payment_visa_processing_stage + 
-        tuition_fee_visa_processing_stage +
-        appointment_visa_processing_stage +
-        visa_approval_visa_processing_stage
-    ) DESC, vp.created_at DESC
-        `);
-        res.status(200).json(rows);
+                registration_visa_processing_stage + 
+                documents_visa_processing_stage + 
+                university_application_visa_processing_stage + 
+                fee_payment_visa_processing_stage + 
+                tuition_fee_visa_processing_stage +
+                appointment_visa_processing_stage +
+                visa_approval_visa_processing_stage
+            ) DESC, vp.created_at DESC
+        `;
+        
+        if (page && limit) {
+            const offset = (parseInt(page) - 1) * parseInt(limit);
+            query += ' LIMIT ? OFFSET ?';
+            const [rows] = await db.query(query, [parseInt(limit), offset]);
+            return res.status(200).json({
+                data: rows,
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total / limit)
+            });
+        } else {
+            const [rows] = await db.query(query);
+            return res.status(200).json(rows);
+        }
     } catch (error) {
         console.error('Error fetching visa applications:', error);
         res.status(500).json({ message: 'Error retrieving visa applications', error: error.message });
@@ -433,36 +459,30 @@ export const GetVisaProcess = async (req, res) => {
 
 //         const [rows] = await db.query(query, values);
 
-//         res.status(200).json(rows);
-//     } catch (error) {
-//         console.error('Error fetching visa applications:', error);
-//         res.status(500).json({ 
-//             message: 'Error retrieving visa applications', 
-//             error: error.message 
-//         });
-//     }
-// };
-
 export const GetVisaProcessbyfilter = async (req, res) => {
     try {
-        const filters = req.query;
+        const {
+            page,
+            limit,
+            search,
+            createdDate,
+            visaStatus,
+            counselor,
+            university_name,
+            country,
+            ...stageFilters
+        } = req.query;
+
         let query = `
-    SELECT 
-        vp.*,
-        vp.full_name as student_name, 
-        vp.email, 
-        vp.phone as mobile_number, 
-        s.country,
-        u.name as university_name
-    FROM visa_process vp
-    INNER JOIN (
-        SELECT student_id, university_id, MAX(id) as max_id
-        FROM visa_process
-        GROUP BY student_id, university_id
-    ) latest ON vp.id = latest.max_id
-    LEFT JOIN students s ON vp.student_id = s.id
-    LEFT JOIN universities u ON vp.university_id = u.id
-`;
+            FROM visa_process vp
+            INNER JOIN (
+                SELECT student_id, university_id, MAX(id) as max_id
+                FROM visa_process
+                GROUP BY student_id, university_id
+            ) latest ON vp.id = latest.max_id
+            LEFT JOIN students s ON vp.student_id = s.id
+            LEFT JOIN universities u ON vp.university_id = u.id
+        `;
 
         let conditions = [];
         let values = [];
@@ -482,29 +502,92 @@ export const GetVisaProcessbyfilter = async (req, res) => {
             'visa_rejection_visa_processing_stage'
         ];
 
-        // Build WHERE conditions
+        // Build WHERE conditions for stage fields
         for (let field of stageFields) {
-            if (filters[field] !== undefined) {
+            if (stageFilters[field] !== undefined && stageFilters[field] !== '') {
                 conditions.push(`vp.${field} = ?`);
-                values.push(filters[field]);
+                values.push(stageFilters[field]);
             }
         }
 
-        // Optional filter by country
-        if (filters.country) {
+        // Search filter
+        if (search) {
+            conditions.push(`(vp.full_name LIKE ? OR vp.email LIKE ? OR vp.phone LIKE ?)`);
+            const searchPattern = `%${search}%`;
+            values.push(searchPattern, searchPattern, searchPattern);
+        }
+
+        // Created date filter
+        if (createdDate) {
+            conditions.push(`DATE(vp.created_at) = ?`);
+            values.push(createdDate);
+        }
+
+        // Visa status filter
+        if (visaStatus) {
+            conditions.push(`vp.visa_status = ?`);
+            values.push(visaStatus);
+        }
+
+        // Counselor filter
+        if (counselor) {
+            conditions.push(`vp.assigned_counselor LIKE ?`);
+            values.push(`%${counselor}%`);
+        }
+
+        // University name filter
+        if (university_name) {
+            conditions.push(`u.name = ?`);
+            values.push(university_name);
+        }
+
+        // Country filter
+        if (country) {
             conditions.push(`s.country = ?`);
-            values.push(filters.country);
+            values.push(country);
         }
 
+        let whereClause = '';
         if (conditions.length > 0) {
-            query += ' WHERE ' + conditions.join(' AND ');
+            whereClause = ' WHERE ' + conditions.join(' AND ');
         }
 
-        query += ' ORDER BY vp.created_at DESC';
+        // Count total matching items
+        const countQuery = `SELECT COUNT(DISTINCT vp.id) as total ${query} ${whereClause}`;
+        const [countResult] = await db.query(countQuery, values);
+        const total = countResult[0]?.total || 0;
 
-        const [rows] = await db.query(query, values);
+        // Final query to fetch paginated/filtered data
+        let finalQuery = `
+            SELECT 
+                vp.*,
+                vp.full_name as student_name, 
+                vp.email, 
+                vp.phone as mobile_number, 
+                s.country,
+                u.name as university_name
+            ${query}
+            ${whereClause}
+            ORDER BY vp.created_at DESC
+        `;
 
-        res.status(200).json(rows);
+        if (page && limit) {
+            const offset = (parseInt(page) - 1) * parseInt(limit);
+            finalQuery += ' LIMIT ? OFFSET ?';
+            const paginatedValues = [...values, parseInt(limit), offset];
+            const [rows] = await db.query(finalQuery, paginatedValues);
+            
+            res.status(200).json({
+                data: rows,
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total / limit)
+            });
+        } else {
+            const [rows] = await db.query(finalQuery, values);
+            res.status(200).json(rows);
+        }
     } catch (error) {
         console.error('Error fetching visa applications:', error);
         res.status(500).json({ 

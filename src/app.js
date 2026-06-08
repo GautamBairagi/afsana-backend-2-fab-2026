@@ -76,10 +76,31 @@ import followUpHistoryRoutes from './routers/followUpHistoryRoutes.js';
 import notesRoutes from './routers/notesRoutes.js';
 import studentUploadsRoutes from './routers/studentUploads.routes.js';
 import supportTicketsRoutes from './routers/supportTickets.routes.js';
+import aiRoutes from './routers/ai.routes.js'; // AI Infrastructure Routes
+import webhookRoutes from './routers/webhook.routes.js'; // Social Webhooks
 
 // ✅ Route handling
 
 app.get('/', (_, res) => { res.send(responsePage) });
+
+// ✅ Public endpoint — no auth — chatbot fetches WhatsApp number dynamically
+app.get('/api/public/settings', async (req, res) => {
+  try {
+    const db = (await import('./config/db.js')).default;
+    const [rows] = await db.query(
+      `SELECT setting_key, setting_value FROM ai_settings WHERE setting_key IN ('whatsapp_number', 'company_name', 'chatbot_greeting')`
+    );
+    const settings = {};
+    for (const row of rows) settings[row.setting_key] = row.setting_value;
+    // Defaults if not set
+    if (!settings.whatsapp_number) settings.whatsapp_number = '8801700000000';
+    if (!settings.company_name) settings.company_name = 'Afsana Consultancy';
+    if (!settings.chatbot_greeting) settings.chatbot_greeting = 'Hello! I am your AI Study Abroad Assistant. How can I help you today?';
+    res.status(200).json({ success: true, settings });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Could not load settings' });
+  }
+});
 app.use('/api/auth', authRoutes);
 app.use('/api', inquiryRoutes);
 app.use('/api', followUproute);
@@ -113,6 +134,8 @@ app.use('/api', notesRoutes);
 app.use('/api', masteradminRoutes);
 app.use('/api', studentUploadsRoutes);
 app.use('/api', supportTicketsRoutes);
+app.use('/api', aiRoutes); // AI Infrastructure
+app.use('/api/webhooks', webhookRoutes); // Social Webhooks
 
 
 // ✅ Log every incoming request

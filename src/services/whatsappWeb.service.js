@@ -12,13 +12,19 @@ export let latestQR = null;
 export const initializeWhatsApp = () => {
     console.log("Starting WhatsApp Web Client initialization...");
     
-    // LocalAuth saves the session so you don't have to scan QR code every time server restarts
+    const puppeteerOptions = {
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    };
+
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        puppeteerOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    } else if (process.platform === 'win32') {
+        puppeteerOptions.executablePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+    }
+
     const client = new Client({
         authStrategy: new LocalAuth(),
-        puppeteer: {
-            executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        }
+        puppeteer: puppeteerOptions
     });
 
     client.on('qr', async (qr) => {

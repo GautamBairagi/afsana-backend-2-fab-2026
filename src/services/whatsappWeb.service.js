@@ -8,6 +8,7 @@ import { autoAssignLead } from '../service/autoAssign.service.js';
 import qrcodeImage from 'qrcode';
 
 export let latestQR = null;
+export let whatsappClient = null;
 
 export const initializeWhatsApp = () => {
     console.log("Starting WhatsApp Web Client initialization...");
@@ -26,6 +27,8 @@ export const initializeWhatsApp = () => {
         authStrategy: new LocalAuth(),
         puppeteer: puppeteerOptions
     });
+    
+    whatsappClient = client;
 
     client.on('qr', async (qr) => {
         console.log('\n=========================================');
@@ -105,7 +108,7 @@ export const initializeWhatsApp = () => {
 
                 // Update Inquiries Table with extracted JSON
                 if (aiResult.extractedData) {
-                    const { priority, name, country, budget, test_type, overall_score } = aiResult.extractedData;
+                    const { priority, name, country, budget, test_type, overall_score, appointment_date, appointment_type } = aiResult.extractedData;
                     const updateFields = [];
                     const updateVals = [];
                     if (priority && priority !== 'null') { updateFields.push('priority = ?'); updateVals.push(priority); }
@@ -114,6 +117,7 @@ export const initializeWhatsApp = () => {
                     if (budget && budget !== 'null') { updateFields.push('budget = ?'); updateVals.push(budget); }
                     if (test_type && test_type !== 'null') { updateFields.push('test_type = ?'); updateVals.push(test_type); }
                     if (overall_score && overall_score !== 'null') { updateFields.push('overall_score = ?'); updateVals.push(overall_score); }
+                    if (appointment_date && appointment_date !== 'null') { updateFields.push('office_visit_date = ?'); updateVals.push(appointment_date); }
                     
                     if (updateFields.length > 0) {
                         updateVals.push(inquiry_id);
@@ -138,4 +142,20 @@ export const initializeWhatsApp = () => {
     });
 
     client.initialize();
+};
+
+export const sendOutboundWhatsAppMessage = async (phoneNumber, messageText) => {
+    try {
+        if (!whatsappClient) {
+            console.error("[WhatsApp Web] Client not initialized. Cannot send message.");
+            return false;
+        }
+        const chatId = `${phoneNumber}@c.us`;
+        await whatsappClient.sendMessage(chatId, messageText);
+        console.log(`[WhatsApp Outbound] Successfully sent to ${phoneNumber}`);
+        return true;
+    } catch (error) {
+        console.error(`[WhatsApp Outbound Error] Failed to send to ${phoneNumber}:`, error.message);
+        return false;
+    }
 };

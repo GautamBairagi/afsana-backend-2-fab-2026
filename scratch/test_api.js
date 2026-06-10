@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = "http://localhost:3009/api/";
+const BASE_URL = "https://afsana-backend-2-fab-2026-production.up.railway.app/api/";
 
 async function checkEndpoints() {
     const endpoints = [

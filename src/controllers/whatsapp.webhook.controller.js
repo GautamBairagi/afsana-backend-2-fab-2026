@@ -1,8 +1,9 @@
 import db from '../config/db.js';
-import { sendWhatsappTextMessage, markMessageAsRead } from '../services/whatsappApi.service.js';
+import { sendCloudWhatsAppMessage } from '../services/whatsappCloud.service.js';
 import { processWhatsappMessage } from '../services/openai.crm.service.js';
+import { autoAssignLead } from '../service/autoAssign.service.js';
+import { getBranchByPhoneId } from '../config/branchMapping.js';
 
-// Simple in-memory rate limiter: { '919876543210': timestamp }
 const rateLimiter = {};
 
 export const verifyWhatsappWebhook = (req, res) => {
@@ -29,13 +30,13 @@ export const handleWhatsappMessage = async (req, res) => {
     res.status(200).send('EVENT_RECEIVED');
 
     if (body.object) {
-        if (body.entry && body.entry[0].changes && body.entry[0].changes[0] && body.entry[0].changes[0].value.messages && body.entry[0].changes[0].value.messages[0]) {
+        if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages && body.entry[0].changes[0].value.messages[0]) {
             const messageObj = body.entry[0].changes[0].value.messages[0];
             const metadata = body.entry[0].changes[0].value.metadata;
             
-            const phone_number_id = metadata.phone_number_id;
+            const phone_number_id = metadata.display_phone_number || metadata.phone_number_id; // Usually we use phone_number_id
+            const raw_phone_number_id = metadata.phone_number_id;
             const from_phone = messageObj.from;
-            const message_id = messageObj.id;
             const message_type = messageObj.type;
 
             // LOOP PROTECTION: Only process 'text' messages for now
@@ -44,6 +45,7 @@ export const handleWhatsappMessage = async (req, res) => {
             }
 
             const msg_body = messageObj.text.body;
+            const branch_name = getBranchByPhoneId(raw_phone_number_id);
 
             // RATE LIMITING (Max 1 response every 5 seconds per user)
             const now = Date.now();
@@ -54,34 +56,29 @@ export const handleWhatsappMessage = async (req, res) => {
             rateLimiter[from_phone] = now;
 
             try {
-                // 1. Mark as read
-                const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-                if (accessToken) {
-                    await markMessageAsRead(phone_number_id, accessToken, message_id);
-                }
+                // 1. Handle Lead in DB (Duplicate Protection)
+                let [inquiries] = await db.query(`SELECT id FROM inquiries WHERE phone_number = ? LIMIT 1`, [from_phone]);
+                let inquiry_id = null;
 
-                // 2. Handle Lead in DB (Duplicate Protection)
-                // Note: Your schema might differ slightly, adjust if needed
-                let [leads] = await db.query(`SELECT id FROM leads WHERE phone = ? LIMIT 1`, [from_phone]);
-                let lead_id = null;
-
-                if (leads.length > 0) {
-                    lead_id = leads[0].id;
-                    // Update interaction time
-                    await db.query(`UPDATE leads SET last_interaction_time = NOW() WHERE id = ?`, [lead_id]);
+                if (inquiries.length > 0) {
+                    inquiry_id = inquiries[0].id;
+                    await db.query(`UPDATE inquiries SET updated_at = NOW(), branch = ? WHERE id = ?`, [branch_name, inquiry_id]);
                 } else {
-                    // Create new lead
+                    // Create new lead in inquiries table
                     const [insertResult] = await db.query(
-                        `INSERT INTO leads (phone, name, email, source_platform, ai_status, last_interaction_time) VALUES (?, ?, ?, ?, ?, NOW())`, 
-                        [from_phone, 'WhatsApp User', `${from_phone}@whatsapp.com`, 'whatsapp_direct', 'handled_by_ai']
+                        `INSERT INTO inquiries (phone_number, full_name, email, source, inquiry_type, new_leads, date_of_inquiry, branch) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)`, 
+                        [from_phone, 'WhatsApp User', `${from_phone}@whatsapp.com`, 'WhatsApp AI', 'student_visa', 'New Lead', branch_name]
                     );
-                    lead_id = insertResult.insertId;
+                    inquiry_id = insertResult.insertId;
+                    
+                    // Auto-assign the new lead
+                    await autoAssignLead(inquiry_id);
                 }
 
-                // 2.5 Ensure Chat Session Exists
+                // 2. Ensure Chat Session Exists
                 await db.query(
                     `INSERT IGNORE INTO chat_sessions (session_token, lead_id) VALUES (?, ?)`,
-                    [from_phone, lead_id]
+                    [from_phone, inquiry_id]
                 );
 
                 // 3. Save incoming message
@@ -95,11 +92,10 @@ export const handleWhatsappMessage = async (req, res) => {
                     `SELECT sender, message FROM chat_messages WHERE session_token = ? AND platform = 'whatsapp' ORDER BY id DESC LIMIT 10`,
                     [from_phone]
                 );
-                // Reverse to chronological order
                 history.reverse();
 
                 // 5. Call OpenAI
-                console.log(`[WhatsApp AI] Processing message for ${from_phone}...`);
+                console.log(`[WhatsApp Cloud AI] Processing message for ${from_phone} via branch ${branch_name}...`);
                 const aiResult = await processWhatsappMessage(msg_body, history);
 
                 let replyText = "";
@@ -108,29 +104,27 @@ export const handleWhatsappMessage = async (req, res) => {
 
                     // Update Lead Table with extracted JSON
                     if (aiResult.extractedData) {
-                        const { lead_score, name, country } = aiResult.extractedData;
+                        const { lead_score, name, country, appointment_date, appointment_type } = aiResult.extractedData;
                         const updateFields = [];
                         const updateVals = [];
-                        if (lead_score) { updateFields.push('lead_score = ?'); updateVals.push(lead_score); }
-                        if (name && name !== 'null') { updateFields.push('name = ?'); updateVals.push(name); }
-                        if (country && country !== 'null') { updateFields.push('preferred_countries = ?'); updateVals.push(country); }
                         
+                        if (lead_score) { updateFields.push('priority = ?'); updateVals.push(lead_score); }
+                        if (name && name !== 'null') { updateFields.push('full_name = ?'); updateVals.push(name); }
+                        if (country && country !== 'null') { updateFields.push('country = ?'); updateVals.push(country); }
+                        if (appointment_date && appointment_date !== 'null') { updateFields.push('office_visit_date = ?'); updateVals.push(appointment_date); }
+                        if (appointment_type && appointment_type !== 'null') { updateFields.push('inquiry_type = ?'); updateVals.push(appointment_type); }
+
                         if (updateFields.length > 0) {
-                            updateVals.push(lead_id);
-                            await db.query(`UPDATE leads SET ${updateFields.join(', ')} WHERE id = ?`, updateVals);
+                            updateVals.push(inquiry_id);
+                            await db.query(`UPDATE inquiries SET ${updateFields.join(', ')} WHERE id = ?`, updateVals);
                         }
                     }
                 } else {
-                    // Fallback
                     replyText = "Thank you for contacting Study First. We are experiencing a high volume of inquiries, one of our counselors will respond shortly.";
                 }
 
-                // 6. Send Reply via WhatsApp API
-                if (accessToken && phone_number_id) {
-                    await sendWhatsappTextMessage(phone_number_id, accessToken, from_phone, replyText);
-                } else {
-                    console.log(`[WhatsApp API Simulated] To ${from_phone}: ${replyText}`);
-                }
+                // 6. Send Reply via Meta Cloud API
+                await sendCloudWhatsAppMessage(from_phone, replyText, raw_phone_number_id);
 
                 // 7. Save AI Reply to DB
                 await db.query(
@@ -139,7 +133,7 @@ export const handleWhatsappMessage = async (req, res) => {
                 );
 
             } catch (err) {
-                console.error("[WhatsApp Controller Error]:", err.message);
+                console.error("[WhatsApp Webhook Controller Error]:", err);
             }
         }
     }

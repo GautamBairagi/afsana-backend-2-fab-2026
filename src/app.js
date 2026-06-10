@@ -78,6 +78,7 @@ import studentUploadsRoutes from './routers/studentUploads.routes.js';
 import supportTicketsRoutes from './routers/supportTickets.routes.js';
 import aiRoutes from './routers/ai.routes.js'; // AI Infrastructure Routes
 import webhookRoutes from './routers/webhook.routes.js'; // Social Webhooks
+import aiDashboardsRoutes from './routers/aiDashboards.route.js';
 
 // ✅ Route handling
 
@@ -136,6 +137,7 @@ app.use('/api', studentUploadsRoutes);
 app.use('/api', supportTicketsRoutes);
 app.use('/api', aiRoutes); // AI Infrastructure
 app.use('/api/webhooks', webhookRoutes); // Social Webhooks
+app.use('/api/ai-dashboards', aiDashboardsRoutes); // AI Priority, Appointments, Drip Logs
 
 
 // ✅ Log every incoming request

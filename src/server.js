@@ -26,8 +26,10 @@ export const io = new Server(server, {
 
 handleSocketConnection(io);
 
-import { initializeWhatsApp, latestQR } from './services/whatsappWeb.service.js';
-initializeWhatsApp();
+// import { initializeWhatsApp, latestQR } from './services/whatsappWeb.service.js';
+// initializeWhatsApp(); // Disabled in favor of Meta Official Webhook API
+import { startCronJobs } from './jobs/cronManager.job.js';
+startCronJobs();
 
 app.get('/api/whatsapp/qr', (req, res) => {
   if (latestQR) {

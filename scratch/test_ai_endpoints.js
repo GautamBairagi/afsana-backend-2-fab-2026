@@ -1,9 +1,9 @@
 import fetch from 'node-fetch';
 
 async function testEndpoints() {
-  const baseUrl = 'http://localhost:3009/api';
+  const baseUrl = 'https://afsana-backend-2-fab-2026-production.up.railway.app/api';
   console.log("=== TESTING AI CONFIG ENDPOINTS ===");
-  
+
   try {
     // 1. Get Settings
     console.log('\nFetching /api/ai/settings...');

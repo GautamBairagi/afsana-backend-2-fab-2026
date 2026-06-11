@@ -5,7 +5,26 @@ import db from '../config/db.js';
 import { processWhatsappMessage } from './openai.crm.service.js';
 import { autoAssignLead } from '../service/autoAssign.service.js';
 
+import fs from 'fs';
+
+const getChromePath = () => {
+    const paths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+    ];
+    for (let path of paths) {
+        if (fs.existsSync(path)) return path;
+    }
+    return undefined; // Let puppeteer try its default
+};
+
 let client;
+let currentQR = null;
+let connectionStatus = 'INITIALIZING';
+
+export const getScannerStatus = () => {
+    return { status: connectionStatus, qr: currentQR };
+};
 
 export const initWhatsAppScanner = () => {
     console.log('[WhatsApp Scanner] Initializing...');
@@ -14,21 +33,33 @@ export const initWhatsAppScanner = () => {
         authStrategy: new LocalAuth(),
         puppeteer: { 
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            executablePath: getChromePath() 
         }
     });
 
     client.on('qr', (qr) => {
-        console.log('[WhatsApp Scanner] Please scan this QR code with your WhatsApp to test the AI:');
+        console.log('[WhatsApp Scanner] QR Code received. Waiting for scan...');
+        currentQR = qr;
+        connectionStatus = 'WAITING_FOR_SCAN';
         qrcode.generate(qr, { small: true });
     });
 
     client.on('ready', () => {
         console.log('[WhatsApp Scanner] WhatsApp Client is ready and connected!');
+        currentQR = null;
+        connectionStatus = 'CONNECTED';
     });
 
     client.on('auth_failure', msg => {
         console.error('[WhatsApp Scanner] Authentication failure:', msg);
+        connectionStatus = 'AUTH_FAILURE';
+    });
+
+    client.on('disconnected', (reason) => {
+        console.log('[WhatsApp Scanner] Client was logged out', reason);
+        connectionStatus = 'DISCONNECTED';
+        currentQR = null;
     });
 
     const rateLimiter = {};

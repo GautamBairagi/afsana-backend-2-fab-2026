@@ -139,6 +139,9 @@ app.use('/api', aiRoutes); // AI Infrastructure
 app.use('/api/webhooks', webhookRoutes); // Social Webhooks
 app.use('/api/ai-dashboards', aiDashboardsRoutes); // AI Priority, Appointments, Drip Logs
 
+import whatsappScannerRoutes from './routers/whatsappScanner.routes.js';
+app.use('/api/whatsapp-scanner', whatsappScannerRoutes);
+
 
 // ✅ Log every incoming request
 app.use((req, res, next) => {

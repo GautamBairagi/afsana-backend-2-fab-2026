@@ -1,0 +1,4 @@
+2026/06/11-17:46:43.995 db0 Creating DB D:\GAUTAM CURRENT March 2026 nihal\A ALL RAILWAY bakcup-13 may-2026\Afsana-Full-Project\afsana_backend\.wwebjs_auth\session\Default\Extension Rules since it was missing.
+2026/06/11-17:46:44.054 db0 Reusing MANIFEST D:\GAUTAM CURRENT March 2026 nihal\A ALL RAILWAY bakcup-13 may-2026\Afsana-Full-Project\afsana_backend\.wwebjs_auth\session\Default\Extension Rules/MANIFEST-000001
+2026/06/11-17:46:44.054 db0 Recovering log #3
+2026/06/11-17:46:44.055 db0 Reusing old log D:\GAUTAM CURRENT March 2026 nihal\A ALL RAILWAY bakcup-13 may-2026\Afsana-Full-Project\afsana_backend\.wwebjs_auth\session\Default\Extension Rules/000003.log 

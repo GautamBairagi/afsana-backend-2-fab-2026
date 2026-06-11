@@ -1,4 +1,4 @@
-import qrcode from 'qrcode-terminal';
+// qrcode-terminal removed — using single-line URL instead
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 import db from '../config/db.js';
@@ -61,10 +61,10 @@ export const initWhatsAppScanner = () => {
     });
 
     client.on('qr', (qr) => {
-        console.log('[WhatsApp Scanner] QR Code received. Waiting for scan...');
         currentQR = qr;
         connectionStatus = 'WAITING_FOR_SCAN';
-        qrcode.generate(qr, { small: true });
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
+        console.log(`[WhatsApp Scanner] QR ready ➜ ${qrUrl}`);
     });
 
     client.on('ready', () => {

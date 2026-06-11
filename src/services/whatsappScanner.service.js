@@ -8,12 +8,22 @@ import { autoAssignLead } from '../service/autoAssign.service.js';
 import fs from 'fs';
 
 const getChromePath = () => {
+    // Use env variable set in Dockerfile (Railway/Linux)
+    if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+        return process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
     const paths = [
+        // Linux system Chromium (Railway / Docker)
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        // Windows paths (local dev)
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
     ];
-    for (let path of paths) {
-        if (fs.existsSync(path)) return path;
+    for (let p of paths) {
+        if (fs.existsSync(p)) return p;
     }
     return undefined; // Let puppeteer try its default
 };
@@ -33,7 +43,15 @@ export const initWhatsAppScanner = () => {
         authStrategy: new LocalAuth(),
         puppeteer: { 
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process'
+            ],
             executablePath: getChromePath() 
         },
         webVersionCache: {

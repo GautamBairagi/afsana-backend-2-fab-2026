@@ -96,9 +96,10 @@ app.get("/", (req, res) => {
   `);
 });
 
-
-
+import { initWhatsAppScanner } from './services/whatsappScanner.service.js';
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
+  // Uncomment the line below to start the WhatsApp scanner when running locally
+  initWhatsAppScanner();
 });

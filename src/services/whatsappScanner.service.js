@@ -1,4 +1,4 @@
-// qrcode-terminal removed — using single-line URL instead
+import qrcode from 'qrcode-terminal';
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 import db from '../config/db.js';
@@ -8,22 +8,12 @@ import { autoAssignLead } from '../service/autoAssign.service.js';
 import fs from 'fs';
 
 const getChromePath = () => {
-    // Use env variable set in Dockerfile (Railway/Linux)
-    if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
-        return process.env.PUPPETEER_EXECUTABLE_PATH;
-    }
     const paths = [
-        // Linux system Chromium (Railway / Docker)
-        '/usr/bin/chromium',
-        '/usr/bin/chromium-browser',
-        '/usr/bin/google-chrome',
-        '/usr/bin/google-chrome-stable',
-        // Windows paths (local dev)
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
     ];
-    for (let p of paths) {
-        if (fs.existsSync(p)) return p;
+    for (let path of paths) {
+        if (fs.existsSync(path)) return path;
     }
     return undefined; // Let puppeteer try its default
 };
@@ -36,6 +26,18 @@ export const getScannerStatus = () => {
     return { status: connectionStatus, qr: currentQR };
 };
 
+// ✅ Kisi bhi number par WhatsApp message bhejo
+export const sendMessage = async (phone, message) => {
+    if (!client || connectionStatus !== 'CONNECTED') {
+        throw new Error('WhatsApp client connected nahi hai. Pehle QR scan karein.');
+    }
+    // phone format: 919876543210 (country code + number, no +, no spaces)
+    const chatId = `${phone}@c.us`;
+    await client.sendMessage(chatId, message);
+    console.log(`[WhatsApp Scanner] Message sent to ${phone}`);
+    return true;
+};
+
 export const initWhatsAppScanner = () => {
     console.log('[WhatsApp Scanner] Initializing...');
 
@@ -43,15 +45,7 @@ export const initWhatsAppScanner = () => {
         authStrategy: new LocalAuth(),
         puppeteer: { 
             headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--no-first-run',
-                '--no-zygote',
-                '--single-process'
-            ],
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
             executablePath: getChromePath() 
         },
         webVersionCache: {
@@ -61,10 +55,10 @@ export const initWhatsAppScanner = () => {
     });
 
     client.on('qr', (qr) => {
+        console.log('[WhatsApp Scanner] QR Code received. Waiting for scan...');
         currentQR = qr;
         connectionStatus = 'WAITING_FOR_SCAN';
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
-        console.log(`[WhatsApp Scanner] QR ready ➜ ${qrUrl}`);
+        qrcode.generate(qr, { small: true });
     });
 
     client.on('ready', () => {

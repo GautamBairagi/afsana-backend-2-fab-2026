@@ -31,36 +31,7 @@ handleSocketConnection(io);
 import { startCronJobs } from './jobs/cronManager.job.js';
 startCronJobs();
 
-app.get('/api/whatsapp/qr', (req, res) => {
-  if (latestQR) {
-    res.send(`
-      <html>
-        <body style="display:flex; justify-content:center; align-items:center; height:100vh; background-color:#f0f2f5; font-family:Arial;">
-          <div style="background:white; padding:40px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); text-align:center;">
-            <h2>Scan WhatsApp QR Code</h2>
-            <img src="${latestQR}" style="width:300px; height:300px; border:1px solid #ddd; padding:10px; border-radius:10px;" />
-            <p style="color:#555; margin-top:20px;">Open WhatsApp on your phone and scan to link the AI CRM.</p>
-          </div>
-          <script>
-             // Auto-refresh every 5 seconds to check if connected
-             setTimeout(() => { window.location.reload(); }, 5000);
-          </script>
-        </body>
-      </html>
-    `);
-  } else {
-    res.send(`
-      <html>
-        <body style="display:flex; justify-content:center; align-items:center; height:100vh; background-color:#f0f2f5; font-family:Arial;">
-          <div style="background:white; padding:40px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1); text-align:center;">
-            <h2 style="color:green;">✅ WhatsApp is Connected!</h2>
-            <p>The AI Chatbot is already running. You can close this window.</p>
-          </div>
-        </body>
-      </html>
-    `);
-  }
-});
+// Old WhatsApp QR route removed
 
 app.get("/", (req, res) => {
   res.send(`
@@ -96,10 +67,8 @@ app.get("/", (req, res) => {
   `);
 });
 
-import { initWhatsAppScanner } from './services/whatsappScanner.service.js';
-
+// WhatsApp Scanner logic removed in favor of official Cloud API
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
-  // Uncomment the line below to start the WhatsApp scanner when running locally
-  initWhatsAppScanner();
+  // initWhatsAppScanner(); // Removed QR scanner
 });

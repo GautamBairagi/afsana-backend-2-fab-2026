@@ -15,7 +15,7 @@ export const verifyWhatsappWebhook = (req, res) => {
     if (mode && token) {
         if (mode === 'subscribe' && token === VERIFY_TOKEN) {
             console.log('[WhatsApp Webhook] Verified');
-            return res.status(200).send(challenge);
+            return res.status(200).type('text/plain').send(challenge);
         } else {
             return res.sendStatus(403);
         }
@@ -25,6 +25,7 @@ export const verifyWhatsappWebhook = (req, res) => {
 
 export const handleWhatsappMessage = async (req, res) => {
     const body = req.body;
+    console.log('\n[Meta Webhook] Received Data:', JSON.stringify(body, null, 2));
     
     // Always return 200 immediately to prevent Meta from retrying
     res.status(200).send('EVENT_RECEIVED');

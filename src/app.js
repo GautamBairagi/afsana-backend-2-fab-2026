@@ -16,6 +16,12 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const tempDir = path.join(__dirname, 'tmp');
+// ✅ Log every incoming request (Moved to top so it logs webhooks too)
+app.use((req, res, next) => {
+  console.log(`[HTTP] ${req.method} ${req.url}`);
+  next();
+});
+
 // 🔐 Middleware
 app.use(cors({
   origin: '*',
@@ -141,11 +147,7 @@ app.use('/api/ai-dashboards', aiDashboardsRoutes); // AI Priority, Appointments,
 
 // QR Scanner routes removed
 
-// ✅ Log every incoming request
-app.use((req, res, next) => {
-  console.log('Incoming request:', req.method, req.url);
-  next();
-});
+// Logger moved to the top
  
 export default app;
 

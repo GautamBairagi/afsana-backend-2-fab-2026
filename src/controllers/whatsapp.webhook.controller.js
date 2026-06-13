@@ -67,8 +67,8 @@ export const handleWhatsappMessage = async (req, res) => {
                 } else {
                     // Create new lead in inquiries table
                     const [insertResult] = await db.query(
-                        `INSERT INTO inquiries (phone_number, full_name, email, source, inquiry_type, new_leads, date_of_inquiry, branch, payment_status) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?)`, 
-                        [from_phone, 'WhatsApp User', `${from_phone}@whatsapp.com`, 'WhatsApp AI', 'student_visa', 'New Lead', branch_name, 'Unpaid']
+                        `INSERT INTO inquiries (phone_number, full_name, email, source, inquiry_type, new_leads, date_of_inquiry, branch, payment_status , assignment_description) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)`, 
+                        [from_phone, 'WhatsApp User', `${from_phone}@whatsapp.com`, 'WhatsApp AI', 'student_visa', 'New Lead', branch_name, 'Unpaid', 'Pending Assignment']
                     );
                     inquiry_id = insertResult.insertId;
                     

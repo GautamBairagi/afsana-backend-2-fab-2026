@@ -1,7 +1,26 @@
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load FAQs into memory on server start
+const faqs = {};
+try {
+    const faqsDir = path.join(__dirname, '../data/faqs');
+    faqs['malta'] = fs.readFileSync(path.join(faqsDir, 'Malta_Customer_support_FAQ.md'), 'utf-8');
+    faqs['cyprus'] = fs.readFileSync(path.join(faqsDir, 'Cyprus _Customer _Support _FAQ.md'), 'utf-8');
+    faqs['greece'] = fs.readFileSync(path.join(faqsDir, 'Greece_Customer_Support _FAQ.md'), 'utf-8');
+    faqs['hungary'] = fs.readFileSync(path.join(faqsDir, 'Hungary_Customer_Support_FAQ.md'), 'utf-8');
+    console.log("[OpenAI Service] Successfully loaded Country FAQs into memory.");
+} catch (error) {
+    console.error("[OpenAI Service] Failed to load Country FAQs:", error.message);
+}
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
@@ -69,9 +88,29 @@ When a student provides their IELTS and budget, refer to this knowledge base to 
  */
 export const processWhatsappMessage = async (newMessage, chatHistory = []) => {
     try {
+        // Detect mentioned countries to append relevant FAQ
+        let dynamicPrompt = WHATSAPP_SYSTEM_PROMPT;
+        const allText = newMessage.toLowerCase() + " " + chatHistory.map(c => (c.message || '').toLowerCase()).join(" ");
+        
+        const mentionedCountries = [];
+        if (allText.includes('malta')) mentionedCountries.push('malta');
+        if (allText.includes('cyprus')) mentionedCountries.push('cyprus');
+        if (allText.includes('greece')) mentionedCountries.push('greece');
+        if (allText.includes('hungary')) mentionedCountries.push('hungary');
+        
+        if (mentionedCountries.length > 0) {
+            dynamicPrompt += "\n\n[DETAILED COUNTRY FAQs FOR CONTEXT]\n";
+            for (const country of mentionedCountries) {
+                if (faqs[country]) {
+                    dynamicPrompt += `\n--- ${country.toUpperCase()} FAQ ---\n${faqs[country]}\n`;
+                }
+            }
+            dynamicPrompt += "\nUse the detailed FAQ above to answer the student's questions accurately.";
+        }
+
         // Format chat history for OpenAI
         const messages = [
-            { role: 'system', content: WHATSAPP_SYSTEM_PROMPT },
+            { role: 'system', content: dynamicPrompt },
             ...chatHistory.map(chat => ({
                 role: chat.sender === 'ai' ? 'assistant' : 'user',
                 content: chat.message || ''

@@ -3,6 +3,24 @@ import { callOpenAI } from '../service/ai/openai.service.js';
 import { extractLeadData, calculateLeadCompleteness } from '../service/ai/lead_extraction.engine.js';
 import { getAiConfig, getPromptTemplate } from '../service/ai/ai_config.service.js';
 import { autoAssignLead } from '../service/autoAssign.service.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load FAQs into memory on server start
+const faqs = {};
+try {
+    const faqsDir = path.join(__dirname, '../data/faqs');
+    faqs['malta'] = fs.readFileSync(path.join(faqsDir, 'Malta_Customer_support_FAQ.md'), 'utf-8');
+    faqs['cyprus'] = fs.readFileSync(path.join(faqsDir, 'Cyprus _Customer _Support _FAQ.md'), 'utf-8');
+    faqs['greece'] = fs.readFileSync(path.join(faqsDir, 'Greece_Customer_Support _FAQ.md'), 'utf-8');
+    faqs['hungary'] = fs.readFileSync(path.join(faqsDir, 'Hungary_Customer_Support_FAQ.md'), 'utf-8');
+} catch (error) {
+    console.error("[Conversational AI] Failed to load Country FAQs:", error.message);
+}
 
 /**
  * Handles the conversational chatbot flow.
@@ -44,7 +62,27 @@ export const askConversationalBot = async (req, res) => {
         const template = await getPromptTemplate('chat', 'Conversational Lead Bot');
         if (template) systemPrompt = template.prompt_text;
 
-        const chatMessages = [{ role: 'system', content: systemPrompt }, ...openAiMessages];
+        // Detect mentioned countries to append relevant FAQ
+        let dynamicPrompt = systemPrompt;
+        const allText = message.toLowerCase() + " " + historyRows.map(r => (r.message || '').toLowerCase()).join(" ");
+        
+        const mentionedCountries = [];
+        if (allText.includes('malta')) mentionedCountries.push('malta');
+        if (allText.includes('cyprus')) mentionedCountries.push('cyprus');
+        if (allText.includes('greece')) mentionedCountries.push('greece');
+        if (allText.includes('hungary')) mentionedCountries.push('hungary');
+        
+        if (mentionedCountries.length > 0) {
+            dynamicPrompt += "\n\n[DETAILED COUNTRY FAQs FOR CONTEXT]\n";
+            for (const country of mentionedCountries) {
+                if (faqs[country]) {
+                    dynamicPrompt += `\n--- ${country.toUpperCase()} FAQ ---\n${faqs[country]}\n`;
+                }
+            }
+            dynamicPrompt += "\nUse the detailed FAQ above to answer the student's questions accurately.";
+        }
+
+        const chatMessages = [{ role: 'system', content: dynamicPrompt }, ...openAiMessages];
         
         const aiResult = await callOpenAI({
             messages: chatMessages,

@@ -26,7 +26,7 @@ export const verifyWhatsappWebhook = (req, res) => {
 export const handleWhatsappMessage = async (req, res) => {
     const body = req.body;
     console.log('\n[Meta Webhook] Received Data:', JSON.stringify(body, null, 2));
-    
+
     // Always return 200 immediately to prevent Meta from retrying
     res.status(200).send('EVENT_RECEIVED');
 
@@ -34,7 +34,7 @@ export const handleWhatsappMessage = async (req, res) => {
         if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages && body.entry[0].changes[0].value.messages[0]) {
             const messageObj = body.entry[0].changes[0].value.messages[0];
             const metadata = body.entry[0].changes[0].value.metadata;
-            
+
             const phone_number_id = metadata.display_phone_number || metadata.phone_number_id; // Usually we use phone_number_id
             const raw_phone_number_id = metadata.phone_number_id;
             const from_phone = messageObj.from;
@@ -66,12 +66,12 @@ export const handleWhatsappMessage = async (req, res) => {
                     await db.query(`UPDATE inquiries SET updated_at = NOW(), branch = ? WHERE id = ?`, [branch_name, inquiry_id]);
                 } else {
                     // Create new lead in inquiries table
-                    const [insertResult] = await db.query(
+                  const [insertResult] = await db.query(
                         `INSERT INTO inquiries (phone_number, full_name, email, source, inquiry_type, new_leads, date_of_inquiry, branch, payment_status , assignment_description) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)`, 
                         [from_phone, 'WhatsApp User', `${from_phone}@whatsapp.com`, 'WhatsApp AI', 'student_visa', 'New Lead', branch_name, 'Unpaid', 'Pending Assignment']
                     );
                     inquiry_id = insertResult.insertId;
-                    
+
                     // Auto-assign the new lead
                     await autoAssignLead(inquiry_id);
                 }
@@ -108,7 +108,7 @@ export const handleWhatsappMessage = async (req, res) => {
                         const { lead_score, name, country, appointment_date, appointment_type } = aiResult.extractedData;
                         const updateFields = [];
                         const updateVals = [];
-                        
+
                         if (lead_score) { updateFields.push('priority = ?'); updateVals.push(lead_score); }
                         if (name && name !== 'null') { updateFields.push('full_name = ?'); updateVals.push(name); }
                         if (country && country !== 'null') { updateFields.push('country = ?'); updateVals.push(country); }

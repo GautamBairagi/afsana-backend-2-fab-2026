@@ -141,9 +141,6 @@ export const processWhatsappMessage = async (newMessage, chatHistory = []) => {
             }
         }
 
-
-
-        
         return {
             success: true,
             reply: textReply,

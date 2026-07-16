@@ -40,12 +40,14 @@ export const createCounselor = async (req, res) => {
     university_id,
     password,
     role,
-    status
+    status,
+    country,
+    branch
   } = req.body;
 
   try {
 
-    if (!user_id || !full_name || !email || !phone || !university_id || !password || !role) {
+    if (!user_id || !full_name || !email || !phone || !password || !role) {
       return res.status(400).json({ message: 'All required fields must be filled' });
     }
 
@@ -56,9 +58,9 @@ export const createCounselor = async (req, res) => {
     }
     const hashed = await bcrypt.hash(password, 10);
     const [counselorResult] = await db.query(
-      `INSERT INTO counselors (user_id,  phone, university_id, status)
-         VALUES (?, ?, ?, ?)`,
-      [user_id, phone, university_id, status]
+      `INSERT INTO counselors (user_id,  phone, university_id, status, country, branch)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      [user_id, phone, university_id, status, country, branch]
     );
 
     if (!counselorResult.affectedRows) {
@@ -113,6 +115,8 @@ export const getCounselorById = async (req, res) => {
       status: counselor.status,
       full_name: counselor.full_name,
       role: counselor.role,
+      country: counselor.country,
+      branch: counselor.branch,
     };
     res.status(200).json(response);
   } catch (err) {
@@ -130,14 +134,16 @@ export const updateCounselor = async (req, res) => {
       phone,
       university_id,
       status,
-      password
+      password,
+      country,
+      branch
     } = req.body;
     try {
       const [result] = await db.query(
         `UPDATE counselors
-           SET user_id = ?,  phone = ?, university_id = ?, status = ?
+           SET user_id = ?,  phone = ?, university_id = ?, status = ?, country = ?, branch = ?
            WHERE id = ?`,
-        [user_id, phone, university_id, status, id]
+        [user_id, phone, university_id, status, country, branch, id]
       );
   
       if (result.affectedRows === 0) {
@@ -192,7 +198,8 @@ export const getAllCounselor = async (_, res) => {
       `
           SELECT 
             c.*, 
-            u.email, u.full_name, u.role 
+            u.email, u.full_name, u.role,
+            (SELECT COUNT(*) FROM inquiries WHERE counselor_id = c.id) AS assigned_leads_count
           FROM counselors c 
           JOIN users u ON c.id = u.counselor_id
           `
@@ -209,6 +216,7 @@ export const getAllCounselor = async (_, res) => {
         const university_name = await universityNameById(counselor.university_id);
         return {
           id: counselor.id,
+          counselor_id: counselor.id,
           user_id: counselor.user_id,
           email: counselor.email,
           phone: counselor.phone,
@@ -216,6 +224,9 @@ export const getAllCounselor = async (_, res) => {
           status: counselor.status,
           full_name: counselor.full_name,
           role: counselor.role,
+          country: counselor.country,
+          branch: counselor.branch,
+          assigned_leads_count: counselor.assigned_leads_count || 0,
           created_at: counselor.created_at,
           updated_at: counselor.updated_at
         };

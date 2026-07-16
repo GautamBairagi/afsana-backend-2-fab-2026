@@ -1,7 +1,7 @@
 import express from 'express';
 import { upload } from '../middlewares/upload.js';
 
-import {updateInquiryPriority, sendInquiryMail,  createInquiry, deleteInquiry, getAllInquiries, getInquiryById, updateInquiry, assignInquiry, getCounselorWisePerformance, getAllConvertedLeads, getAllleadsstatus, getCheckEligiblity, updateEligibilityStatus, updateLeadStatus , uploadDocuments, getConvertedLeadsByCounselorId, StudentAssignToProcessor} from '../controllers/inquiry.controller.js';
+import {updateInquiryPriority, sendInquiryMail,  createInquiry, deleteInquiry, getAllInquiries, getInquiryById, updateInquiry, assignInquiry, bulkAssignInquiry, getInquiriesAndLeadsByCounselorId, getCounselorWisePerformance, getAllConvertedLeads, getAllleadsstatus, getCheckEligiblity, updateEligibilityStatus, updateLeadStatus , uploadDocuments, getConvertedLeadsByCounselorId, StudentAssignToProcessor} from '../controllers/inquiry.controller.js';
 import { aiScoreLead, aiLeadScoreHistory } from '../controllers/ai.lead_scoring.controller.js';
 // import { authenticate } from '../middlewares/auth.middleware.js';
 const router = express.Router();
@@ -14,6 +14,7 @@ router.get('/AllConvertedLeadsinquiries', getAllConvertedLeads);
 // router.get('/getConvertedLeadsByBranch', getConvertedLeadsByBranch);
 
 router.get('/leads/by-counselor/:id', getConvertedLeadsByCounselorId);
+router.get('/counselor-assigned-leads/:id', getInquiriesAndLeadsByCounselorId);
 
 
 router.patch('/priority', updateInquiryPriority);
@@ -22,6 +23,7 @@ router.patch('/priority', updateInquiryPriority);
 
 router.patch('/StudentAssignToProcessor', StudentAssignToProcessor);
 router.post('/assign-inquiry', assignInquiry); // ✅ Add this line
+router.post('/bulk-assign-inquiry', bulkAssignInquiry); // ✅ Bulk assign leads/inquiries
 router.get('/counselor-performance', getCounselorWisePerformance); // ✅ Add this linegetAllleadsstatus
 router.get('/getAllleadsstatus', getAllleadsstatus); // ✅ Add this linegetAllleadsstatus
 router.get('/getCheckEligiblity/:id', getCheckEligiblity); // ✅ Add this linegetAllleadsstatus

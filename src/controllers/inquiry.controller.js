@@ -622,6 +622,67 @@ export const assignInquiry = async (req, res) => {
   }
 };
 
+export const bulkAssignInquiry = async (req, res) => {
+  const { inquiry_ids, counselor_id, follow_up_date, notes, assigned_by } = req.body;
+
+  if (!inquiry_ids || !Array.isArray(inquiry_ids) || inquiry_ids.length === 0 || !counselor_id) {
+    return res.status(400).json({ message: 'inquiry_ids (non-empty array) and counselor_id are required' });
+  }
+
+  try {
+    const placeholders = inquiry_ids.map(() => '?').join(', ');
+    const [result] = await db.query(
+      `UPDATE inquiries
+       SET counselor_id = ?, 
+           status = 1, 
+           updated_at = NOW()
+           ${follow_up_date ? ', follow_up_date = ?' : ''}
+           ${notes ? ', notes = ?' : ''}
+           ${assigned_by ? ', assigned_by = ?' : ''}
+       WHERE id IN (${placeholders})`,
+      [
+        counselor_id,
+        ...(follow_up_date ? [follow_up_date] : []),
+        ...(notes ? [notes] : []),
+        ...(assigned_by ? [assigned_by] : []),
+        ...inquiry_ids
+      ]
+    );
+
+    const [findCounselorName] = await db.query("SELECT full_name FROM users WHERE counselor_id = ?", [counselor_id]);
+    const name = findCounselorName[0]?.full_name || 'Counselor';
+
+    await db.query(`
+      INSERT INTO dashboard_notifications (counselor_id, student_id, cNotification, sNotification, message)
+      VALUES (?, ?, ?, ?, ?)`,
+      [counselor_id, null, 1, 0, `${inquiry_ids.length} leads/inquiries assigned to ${name}`]
+    );
+
+    res.status(200).json({ message: `${inquiry_ids.length} leads assigned successfully to ${name}` });
+  } catch (error) {
+    console.error('Error in bulk assigning inquiries:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const getInquiriesAndLeadsByCounselorId = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const [rows] = await db.query(
+      `SELECT i.*, u.full_name AS counselor_name 
+       FROM inquiries i 
+       LEFT JOIN users u ON i.counselor_id = u.counselor_id 
+       WHERE i.counselor_id = ? 
+       ORDER BY i.id DESC`,
+      [id]
+    );
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error('Error fetching leads by counselor id:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 export const updateInquiryPriority = async (req, res) => {
   const { inquiry_id, priority } = req.body;
 

@@ -124,13 +124,13 @@ export const login = async (req, res) => {
       return res.json({
         token,
         user: {
-          // phone : maindetails[0].phone,
+          // phone : maindetails[0]?.phone,
           id: user.id,
           email: user.email,
           full_name: user.full_name,
           role: user.role,
           student_id: user.student_id,
-          staff_id: results.staff_id,
+          staff_id: user.staff_id,
           photo: maindetails[0]?.photo 
             ? (maindetails[0].photo.startsWith('http') ? maindetails[0].photo : `${req.protocol}://${req.get('host')}${maindetails[0].photo}`) 
             : null,
@@ -143,14 +143,20 @@ export const login = async (req, res) => {
       const [details] = await db.query('SELECT * FROM counselors WHERE id = ?', [user.counselor_id]);
       maindetails = details;
       console.log("maindetails[0]?.university_id : ", maindetails[0]?.university_id);
-      const data = await universityNameById(maindetails[0]?.university_id);
-      console.log("data : ", data);
+      let university_name = null;
+      if (maindetails[0]?.university_id) {
+        const data = await universityNameById(maindetails[0].university_id);
+        console.log("data : ", data);
+        if (data && data.length > 0) {
+          university_name = data[0]?.name || null;
+        }
+      }
       return res.json({
         token,
         user: {
-          phone: maindetails[0].phone,
-          status: maindetails[0].status,
-          university_name: data[0].name,
+          phone: maindetails[0]?.phone || null,
+          status: maindetails[0]?.status || null,
+          university_name: university_name,
           id: user.id,
           email: user.email,
           full_name: user.full_name,

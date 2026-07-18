@@ -14,11 +14,6 @@ export const createAdmissionDecision = async (req, res) => {
       return res.status(400).json({ message: 'student_id and university_id are required' });
     }
 
-
-
-
-
-    
     const [result] = await db.query(
       `INSERT INTO admission_decisions (user_id, student_id, university_id, status, decision_date)
          VALUES (?, ?, ?, ?, ?)`,
